@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+
+# Cached raw TLE fetches (keep committed samples out of the cache dir)
+data/raw/*.tle
+
+# OS
+.DS_Store

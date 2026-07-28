@@ -1,0 +1,1 @@
+"""FastAPI app serving the precomputed orbits/events + static CesiumJS frontend."""

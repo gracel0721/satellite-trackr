@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Satellite Collision Risk Tracker</title>
+  <link rel="stylesheet" href="/style.css" />
+  <script src="https://cesium.com/downloads/cesiumjs/releases/1.118/Build/Cesium/Cesium.js"></script>
+  <link href="https://cesium.com/downloads/cesiumjs/releases/1.118/Build/Cesium/Widgets/widgets.css" rel="stylesheet" />
+</head>
+<body>
+  <div id="cesiumContainer"></div>
+
+  <div id="panel">
+    <h1>🛰️ Satellite Collision Risk Tracker</h1>
+    <div id="meta" class="meta">Loading…</div>
+
+    <div class="control">
+      <label for="threshold">Close-approach threshold: <span id="thrVal">—</span> km</label>
+      <input id="threshold" type="range" min="1" max="100" step="1" value="50" />
+    </div>
+
+    <h2>⚠️ Alerts (<span id="alertCount">0</span>)</h2>
+    <div id="alerts" class="alerts"></div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

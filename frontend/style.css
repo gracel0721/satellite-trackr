@@ -1,0 +1,29 @@
+html, body { margin: 0; padding: 0; height: 100%; font-family: system-ui, Segoe UI, Roboto, sans-serif; }
+#cesiumContainer { position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
+
+#panel {
+  position: absolute; top: 12px; left: 12px; width: 320px; max-width: 38vw;
+  background: rgba(15, 23, 42, 0.86); color: #e5e7eb; padding: 14px 16px;
+  border-radius: 10px; box-shadow: 0 6px 24px rgba(0,0,0,0.45);
+  backdrop-filter: blur(6px); max-height: calc(100vh - 24px); overflow-y: auto;
+  z-index: 10; font-size: 13px;
+}
+#panel h1 { font-size: 15px; margin: 0 0 6px; }
+#panel h2 { font-size: 13px; margin: 14px 0 6px; color: #fca5a5; }
+.meta { color: #9ca3af; font-size: 11px; margin-bottom: 10px; }
+
+.control { margin: 8px 0 4px; }
+.control label { display: block; margin-bottom: 4px; }
+.control input[type=range] { width: 100%; }
+
+.alerts { display: flex; flex-direction: column; gap: 6px; }
+.alert {
+  background: rgba(127, 29, 29, 0.35); border: 1px solid rgba(248, 113, 113, 0.55);
+  border-radius: 6px; padding: 8px 10px; cursor: pointer; transition: background 0.15s;
+}
+.alert:hover { background: rgba(185, 28, 28, 0.5); }
+.alert .a { color: #fff; font-weight: 600; }
+.alert .d { color: #fde68a; }
+.alert .t { color: #9ca3af; font-size: 11px; }
+
+.cesium-viewer-bottom { display: none; }
