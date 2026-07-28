@@ -15,3 +15,5 @@ data/raw/*.tle
 
 # OS
 .DS_Store
+
+spec.md
