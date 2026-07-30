@@ -5,7 +5,7 @@ name: Refresh orbital data
 # triggered manually from the Actions tab.
 on:
   schedule:
-    - cron: "0 */6 * * *"  # every 6 hours
+    - cron: "0 0 * * *"  # every day
   workflow_dispatch:
 
 permissions:
