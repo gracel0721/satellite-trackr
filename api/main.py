@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from config import (  # noqa: E402
     CESIUM_ION_TOKEN,
+    DATA_URL,
     EVENTS_FILE,
     FETCH_DELAY_S,
     FRONTEND_DIR,
@@ -90,6 +91,9 @@ def get_config() -> dict:
         "fetch_delay_s": FETCH_DELAY_S,
         "fetch_time": (_cache["orbits"] or {}).get("fetch_time"),
         "cesium_ion_token": CESIUM_ION_TOKEN,
+        # When set, the frontend fetches the merged positions.json straight
+        # from this public GCS URL instead of the repo data files.
+        "data_url": DATA_URL,
     }
 
 

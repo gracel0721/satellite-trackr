@@ -64,3 +64,9 @@ FLAG_REL_VEL = True  # include relative velocity in event output
 # Optional Cesium Ion access token for terrain/imagery. If unset the app
 # falls back to free default imagery/terrain so it runs without an account.
 CESIUM_ION_TOKEN = os.environ.get("CESIUM_ION_TOKEN", "")
+
+# Public URL of the merged positions.json the Cloud Function publishes to GCS.
+# When set (production deploy), the frontend fetches the data straight from
+# the bucket instead of the repo's committed data files. Leave empty for local
+# dev, where the frontend falls back to the /api/orbits + /api/events endpoints.
+DATA_URL = os.environ.get("DATA_URL", "")

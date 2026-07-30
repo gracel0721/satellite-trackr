@@ -17,16 +17,22 @@ conjunction-analysis tool, built on publicly available data.
 ## Architecture
 
 ```
-pipeline (CLI / GitHub Action, every 6h)
+pipeline (CLI locally; Cloud Function every 12h in prod)
   fetch TLEs (CelesTrak) ──▶ data/raw/*.tle
   run sgp4     ──▶ data/orbits/orbits.json  (ECEF xyz, meters)
   close-approach analysis ──▶ data/events/events.json
                  │
                  ▼
-data/*.json ── served read-only by ── FastAPI (api/main.py)
-                 │   GET /api/config  /api/satellites  /api/orbits  /api/events
+Cloud Function (Cloud Scheduler, every 12h) ──▶ public GCS bucket /positions.json
+  (merged orbits + events; the frontend fetches this in production)
+  (locally, `python pipeline/run_pipeline.py` writes data/*.json for dev)
+                 │
+                 ▼
+FastAPI (api/main.py)  ──▶ local dev: /api/config, /api/orbits, /api/events (reads repo data)
+Vercel (api/config.py) ──▶ prod: /api/config only (returns the GCS `data_url`)
                  ▼
 CesiumJS frontend (frontend/index.html + app.js)
+  fetches positions.json from GCS when `data_url` is set, else the API endpoints
   3D globe · moving satellite dots · time-scrub (Cesium clock + timeline)
   red close-approach pairs + connecting lines · alerts panel · threshold slider
 ```
@@ -36,7 +42,7 @@ CesiumJS frontend (frontend/index.html + app.js)
 - **FastAPI + static CesiumJS frontend**: 3D-globe integration with the ablity to showcase the visualization skill the project targets. This is a fullstack app, so both the frontend and backend are served together
 - **Precompute pipeline** —  produces the orbit tracks and events as
   JSON, the app only loads and renders them. This lets the UI not be bogged down and lets
-  a GitHub Action refresh data on a schedule.
+  a Cloud Function refresh data on a schedule.
 - **Multi-group bulk fetch + spatial pruning** — `pipeline/fetch.py` can pull
   several CelesTrak groups and merge them; `pipeline/analysis.py` uses a
   `scipy.spatial.cKDTree` so the close-approach search stays O(n log n) instead
@@ -44,10 +50,11 @@ CesiumJS frontend (frontend/index.html + app.js)
   manageable when scaling to thousands of satellites.
 
 
+
 **Limitations**
 - Celestrak has a low rate limit. The pipeline mitigates this with cache reuse,
-  polite delays between group fetches, and by letting GitHub Actions do the
-  live fetching. 
+  polite delays between group fetches, and by running the live fetch on a Cloud
+  Function on a schedule (every 12h) rather than per request.
 
 - The UI sucks in general (I hate frontend), and is not at all mobile friendly. I will work on it
 
@@ -64,10 +71,13 @@ pipeline/
   propagate.py            # sgp4 → TEME → ECEF (meters) + lat/lon/alt
   analysis.py             # vectorized pairwise distance + relative velocity
   run_pipeline.py         # orchestrate fetch → propagate → analyze → JSON
-api/main.py               # FastAPI: static frontend + JSON endpoints
+api/main.py               # FastAPI: static frontend + JSON endpoints (local dev)
+api/config.py             # Vercel /api/config function (returns GCS data_url)
+main.py                   # Cloud Function: run pipeline + publish positions.json to GCS
 frontend/                 # index.html, app.js, style.css (CesiumJS via CDN)
 data/                     # generated JSON outputs (raw cache is gitignored)
-.github/workflows/refresh.yml  # cron refresh of orbital data
+infra/                    # Terraform: Cloud Function + Cloud Scheduler + GCS bucket
+vercel.json               # Vercel: static frontend output + /api/config function
 ```
 
 ---
@@ -123,6 +133,7 @@ variables:
 | `FETCH_DELAY_S` | `1.0` | polite sleep between live CelesTrak group fetches |
 | `CACHE_TTL_HRS` | `6.0` | reuse cached TLEs if newer than this |
 | `CESIUM_ION_TOKEN` | _(empty)_ | optional; app works without it |
+| `DATA_URL` | _(empty)_ | public GCS `positions.json` URL; when set (Vercel deploy) the frontend reads data from the bucket instead of the repo's committed files |
 
 ### ⚠️ A note on the threshold
 
@@ -176,16 +187,28 @@ every event.
 
 ## Deploy
 
-The app is a single FastAPI process that serves both the API and the static
-frontend, so it deploys as one unit.
+In production the static CesiumJS frontend is served by **Vercel** and reads
+data straight from the public GCS bucket; a single serverless function
+(`api/config.py`) hands the frontend the bucket URL. The FastAPI app
+(`api/main.py`) is kept for local dev only and excluded from the Vercel build
+via `.vercelignore`.
 
-- **Render:** create a Web Service from this repo. Build: `pip install -r
-  requirements.txt`. Start: `uvicorn api.main:app --host 0.0.0.0 --port $PORT`.
-  Run the pipeline once on deploy (or rely on the GitHub Action to commit fresh
-  data).
-- **Scheduled refresh:** the `.github/workflows/refresh.yml` GitHub Action runs
-  the pipeline every 6 hours and commits updated `data/*.json` back to the
-  repo, so the demo stays fresh without a long-running compute job.
+- **Vercel:** import this repo. No build step — `vercel.json` sets
+  `outputDirectory: "frontend"` and `api/config.py` becomes the `/api/config`
+  serverless function. In the Vercel dashboard set the `DATA_URL` environment
+  variable to the public GCS `positions.json` URL (Terraform outputs it as
+  `positions_json_url`); optionally set `CESIUM_ION_TOKEN`. With `DATA_URL` set
+  the frontend fetches `positions.json` from GCS; without it (local dev) it
+  falls back to the FastAPI `/api/orbits` + `/api/events` endpoints reading the
+  repo's committed `data/*.json`.
+- **Local dev:** `uvicorn api.main:app --reload` serves the same frontend plus
+  the `/api/*` endpoints that read `data/*.json` from disk (leave `DATA_URL`
+  unset).
+- **Scheduled refresh:** the Cloud Function (deployed via `infra/`, triggered by
+  Cloud Scheduler every 12 hours) runs the pipeline and publishes
+  `positions.json` to the public GCS bucket the frontend reads in production.
+  The committed `data/*.json` is just a static snapshot for local dev; refresh
+  it manually with `python pipeline/run_pipeline.py`.
 
 ---
 

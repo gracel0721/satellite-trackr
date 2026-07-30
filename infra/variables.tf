@@ -22,8 +22,8 @@ variable "data_bucket" {
 
 variable "schedule" {
   type        = string
-  default     = "0 */3 * * *"
-  description = "Cloud Scheduler cron expression (UTC). Default = every 3 hours (8x/day)."
+  default     = "0 */12 * * *"
+  description = "Cloud Scheduler cron expression (UTC). Default = every 12 hours (2x/day)."
 }
 
 variable "sat_groups" {
@@ -35,7 +35,7 @@ variable "sat_groups" {
 variable "memory_mb" {
   type        = number
   default     = 2048
-  description = "Cloud Function memory. Propagating thousands of sats over 24h needs headroom; 2GiB stays within the free-tier GB-second budget at 8 runs/day."
+  description = "Cloud Function memory. Propagating thousands of sats over 24h needs headroom; 2GiB stays within the free-tier GB-second budget at 2 runs/day."
 }
 
 variable "timeout_seconds" {
