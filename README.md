@@ -57,7 +57,7 @@ CesiumJS frontend (frontend/index.html + app.js)
 
 ## Project layout
 
-```
+``` 
 config.py                 # all knobs: group, time window, threshold, etc.
 pipeline/
   fetch.py                # CelesTrak TLE fetch + parse + cache
