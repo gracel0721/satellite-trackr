@@ -1,15 +1,15 @@
 # Satellite Collision Risk Tracker 🛰️
 
-A portfolio project that pulls **live satellite orbital data** from
-[CelesTrak](https://celestrak.org), propagates orbits with the `sgp4`
-algorithm, computes **close-approach ("collision risk") events** between
+Pulls **live satellite orbital data** from
+[CelesTrak](https://celestrak.org), calculates orbits with the sgp4
+algorithm, computes close-approach ("collision risk") events between
 satellites using vectorized numpy, and visualizes them on an interactive
-**CesiumJS 3D globe** wrapped in a FastAPI app.
+CesiumJS 3D globe, wrapped in FastAPI.
 
 Low Earth orbit is increasingly congested. Operators need tools to identify
 when two objects are approaching each other dangerously close so they can plan
-avoidance maneuvers. This project is a simplified, demo-able version of that
-conjunction-analysis tool, built entirely on public data.
+avoidance maneuvers. This project is a simplified version of that
+conjunction-analysis tool, built on publicly available data.
 
 ---
 
@@ -18,7 +18,7 @@ conjunction-analysis tool, built entirely on public data.
 ```
 pipeline (CLI / GitHub Action, every 6h)
   fetch TLEs (CelesTrak) ──▶ data/raw/*.tle
-  propagate with sgp4     ──▶ data/orbits/orbits.json  (ECEF xyz, meters)
+  run sgp4     ──▶ data/orbits/orbits.json  (ECEF xyz, meters)
   close-approach analysis ──▶ data/events/events.json
                  │
                  ▼
@@ -32,14 +32,28 @@ CesiumJS frontend (frontend/index.html + app.js)
 
 **Design choices**
 
-- **FastAPI + static CesiumJS frontend** — cleanest 3D-globe integration and
-  the best showcase of the visualization skill the project targets. The same
-  app serves the API and the frontend (no separate build step).
-- **Precompute pipeline** — a CLI step produces the orbit tracks and events as
-  JSON; the app only loads and renders them. This keeps the UI instant and lets
+- **FastAPI + static CesiumJS frontend**: 3D-globe integration with the ablity to showcase the visualization skill the project targets. This is a fullstack app, so both the frontend and backend are served together
+- **Precompute pipeline** —  produces the orbit tracks and events as
+  JSON, the app only loads and renders them. This lets the UI not be bogged down and lets
   a GitHub Action refresh data on a schedule.
-- **Starlink subset (~200 objects)** — keeps the O(n²) pairwise analysis
-  (~20k pairs per timestep) trivially vectorizable without spatial pruning.
+- **Multi-group bulk fetch + spatial pruning** — `pipeline/fetch.py` can pull
+  several CelesTrak groups and merge them; `pipeline/analysis.py` uses a
+  `scipy.spatial.cKDTree` so the close-approach search stays O(n log n) instead
+  of O(n²). An optional output decimation keeps the frontend JSON payload
+  manageable when scaling to thousands of satellites.
+
+
+**Limitations**
+- Celestrak has a low rate limit. The pipeline mitigates this with cache reuse,
+  polite delays between group fetches, and by letting GitHub Actions do the
+  live fetching. It still respects CelesTrak's terms — no proxy rotation or
+  header tricks.
+
+- i need to dedupe potential collisions with the same satellites at very close times. 
+
+- The UI sucks in general (I hate frontend), and is not at all mobile friendly. I will work on it
+
+- I am not an astrophysicist, and have never claimed to be. The sgp4 algo has its limitations, so the orbit calculation is not perfect, but it's the best approximation I could find without going to grad school. 
 
 ---
 
@@ -69,7 +83,7 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### Run the pipeline
+### Run the precompute pipeline
 
 ```bash
 python pipeline/run_pipeline.py
@@ -77,7 +91,7 @@ python pipeline/run_pipeline.py
 
 This fetches the `starlink` group from CelesTrak (capped to 200 satellites),
 propagates each over a 24h window at 1-minute steps, detects close approaches,
-and writes `data/orbits/orbits.json` and `data/events/events.json`. A summary
+and writes `data/orbits/orbits.json` and `data/events/events.json`. A summary of 'collision risk' events 
 is printed to the console.
 
 ### Run the app
@@ -89,33 +103,38 @@ uvicorn api.main:app --reload
 
 You should see the 3D globe with ~200 satellites moving along their orbits as
 the timeline scrubs, red markers + connecting lines for close-approach pairs,
-and an alerts panel. Drag the threshold slider to filter alerts.
+and an alerts panel. Drag the threshold slider to filter alerts by near miss distance.
 
 ---
 
 ## Configuration
 
-All knobs live in `config.py` and most are overridable via environment
+All controls live in `config.py` and most are overridable via environment
 variables:
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `SAT_GROUP` | `starlink` | CelesTrak group |
-| `N_MAX` | `200` | cap satellites (keeps O(n²) cheap) |
+| `SAT_GROUP` | `starlink` | fallback single CelesTrak group |
+| `SAT_GROUPS` | `SAT_GROUP` | comma-separated list of groups, e.g. `starlink,oneweb,iridium` |
+| `N_MAX` | _(unset)_ | optional cap on total satellites; empty means no cap |
 | `TIME_WINDOW_HRS` | `24` | propagation span |
-| `STEP_MIN` | `1` | minutes between samples |
-| `THRESHOLD_KM` | `50` | close-approach distance cutoff |
+| `STEP_MIN` | `1` | minutes between samples for analysis |
+| `OUTPUT_STEP_MIN` | `5` | minutes between output samples for the frontend JSON; larger values reduce payload size |
+| `THRESHOLD_KM` | `10` | close-approach distance cutoff |
 | `MIN_CLOSING_VEL_KM_S` | `0` | ignore slow pairs (0 = disabled) |
+| `FETCH_DELAY_S` | `1.0` | polite sleep between live CelesTrak group fetches |
+| `CACHE_TTL_HRS` | `6.0` | reuse cached TLEs if newer than this |
 | `CESIUM_ION_TOKEN` | _(empty)_ | optional; app works without it |
 
 ### ⚠️ A note on the threshold
 
-Genuine sub-10 km conjunctions among a ~200-satellite subset over 24h are
-**rare**. The demo default of `THRESHOLD_KM=50` is set higher so the UI surfaces
-visible "close approaches" to visualize. The detection math is identical at
-any cutoff — lower it to `10` for realistic conjunction screening. The
-relative closing speed (`rel_vel_km_s`) is included so fast approaches can be
-prioritized.
+Genuine sub-10 km conjunctions among a small satellite subset over 24h are
+**rare**, but with thousands of satellites in a group like Starlink they are
+much more common. The default `THRESHOLD_KM=10` is a realistic operational
+screening cutoff. Raise it to `50` if you want the UI to surface more visible
+"close approaches" for a sparse demo. The detection math is identical at any
+cutoff — the relative closing speed (`rel_vel_km_s`) is included so fast
+approaches can be prioritized.
 
 ---
 

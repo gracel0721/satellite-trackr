@@ -13,7 +13,7 @@ env/
 # Cached raw TLE fetches (keep committed samples out of the cache dir)
 data/raw/*.tle
 
-# OS
+# OSb
 .DS_Store
 
 spec.md

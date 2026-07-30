@@ -27,11 +27,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import (  # noqa: E402
     CESIUM_ION_TOKEN,
     EVENTS_FILE,
+    FETCH_DELAY_S,
     FRONTEND_DIR,
     MIN_CLOSING_VEL_KM_S,
     N_MAX,
     ORBITS_FILE,
+    OUTPUT_STEP_MIN,
     SAT_GROUP,
+    SAT_GROUPS,
     STEP_MIN,
     THRESHOLD_KM,
     TIME_WINDOW_HRS,
@@ -77,11 +80,14 @@ def refresh() -> dict:
 def get_config() -> dict:
     return {
         "sat_group": SAT_GROUP,
+        "sat_groups": SAT_GROUPS,
         "n_max": N_MAX,
         "time_window_hrs": TIME_WINDOW_HRS,
         "step_min": STEP_MIN,
+        "output_step_min": OUTPUT_STEP_MIN,
         "threshold_km": THRESHOLD_KM,
         "min_closing_vel_km_s": MIN_CLOSING_VEL_KM_S,
+        "fetch_delay_s": FETCH_DELAY_S,
         "fetch_time": (_cache["orbits"] or {}).get("fetch_time"),
         "cesium_ion_token": CESIUM_ION_TOKEN,
     }

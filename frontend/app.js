@@ -5,7 +5,7 @@
 const MAX_ALERT_LINES = 400; // cap rendered event lines for performance
 
 let viewer, satEntities = {}, eventsData = [], orbitsData = null, config = {};
-const stepSeconds = 60; // matches pipeline STEP_MIN (1 min)
+let stepSeconds = 60; // derived from output time grid after data loads
 
 function fromIso(s) { return Cesium.JulianDate.fromIso8601(s); }
 
@@ -115,7 +115,7 @@ function renderAlerts(threshold) {
     div.className = 'alert';
     div.innerHTML =
       `<div class="a">${ev.name_a} ↔ ${ev.name_b}</div>` +
-      `<div class="d">${ev.distance_km.toFixed(2)} km` +
+      `<div class="d">${ev.distance_km.toFixed(1)} km` +
       (ev.rel_vel_km_s != null ? ` · ${ev.rel_vel_km_s.toFixed(2)} km/s` : '') + `</div>` +
       `<div class="t">${ev.timestamp}</div>`;
     div.onclick = () => {
@@ -127,9 +127,16 @@ function renderAlerts(threshold) {
   });
 }
 
+function computeStepSeconds(t) {
+  if (!Array.isArray(t) || t.length < 2) return 60;
+  const dt = (new Date(t[1]).getTime() - new Date(t[0]).getTime()) / 1000;
+  return Number.isFinite(dt) && dt > 0 ? dt : 60;
+}
+
 async function init() {
   // Use a free imagery source so the globe renders without a Cesium Ion token.
   await loadAll();
+  stepSeconds = computeStepSeconds(orbitsData.t);
   if (config.cesium_ion_token) Cesium.Ion.defaultAccessToken = config.cesium_ion_token;
 
   const imageryProvider = new Cesium.OpenStreetMapImageryProvider({
@@ -153,11 +160,13 @@ async function init() {
 
   const slider = document.getElementById('threshold');
   const thrVal = document.getElementById('thrVal');
-  const initThr = Math.round(config.threshold_km || 50);
-  slider.value = initThr; thrVal.textContent = initThr;
+  // Default slider / filter position is 1 km, regardless of the pipeline's
+  // detection threshold. The slider max is 5 km with 0.1 km steps.
+  const initThr = Math.min(1.0, Number(slider.max) || 5);
+  slider.value = initThr; thrVal.textContent = initThr.toFixed(1);
   renderAlerts(initThr);
   slider.addEventListener('input', () => {
-    const v = Number(slider.value); thrVal.textContent = v; renderAlerts(v);
+    const v = Number(slider.value); thrVal.textContent = v.toFixed(1); renderAlerts(v);
   });
 }
 
