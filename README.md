@@ -47,10 +47,7 @@ CesiumJS frontend (frontend/index.html + app.js)
 **Limitations**
 - Celestrak has a low rate limit. The pipeline mitigates this with cache reuse,
   polite delays between group fetches, and by letting GitHub Actions do the
-  live fetching. It still respects CelesTrak's terms — no proxy rotation or
-  header tricks.
-
-- i need to dedupe potential collisions with the same satellites at very close times. 
+  live fetching. 
 
 - The UI sucks in general (I hate frontend), and is not at all mobile friendly. I will work on it
 

@@ -161,12 +161,12 @@ async function init() {
   const slider = document.getElementById('threshold');
   const thrVal = document.getElementById('thrVal');
   // Default slider / filter position is 1 km, regardless of the pipeline's
-  // detection threshold. The slider max is 5 km with 0.1 km steps.
+  // detection threshold. The slider ranges 0.01–5 km in 0.01 km steps.
   const initThr = Math.min(1.0, Number(slider.max) || 5);
-  slider.value = initThr; thrVal.textContent = initThr.toFixed(1);
+  slider.value = initThr; thrVal.textContent = initThr.toFixed(2);
   renderAlerts(initThr);
   slider.addEventListener('input', () => {
-    const v = Number(slider.value); thrVal.textContent = v.toFixed(1); renderAlerts(v);
+    const v = Number(slider.value); thrVal.textContent = v.toFixed(2); renderAlerts(v);
   });
 }
 
