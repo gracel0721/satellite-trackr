@@ -67,17 +67,17 @@ CesiumJS frontend (frontend/index.html + app.js)
 ``` 
 config.py                 # all knobs: group, time window, threshold, etc.
 pipeline/
-  fetch.py                # CelesTrak TLE fetch + parse + cache
+  fetch.py                # CelesTrak TLE fetch + parse + GCS-backed cache
   propagate.py            # sgp4 → TEME → ECEF (meters) + lat/lon/alt
-  analysis.py             # vectorized pairwise distance + relative velocity
+  analysis.py             # cKDTree close-approach detection + relative velocity
   run_pipeline.py         # orchestrate fetch → propagate → analyze → JSON
-api/main.py               # FastAPI: static frontend + JSON endpoints (local dev)
-api/config.py             # Vercel /api/config function (returns GCS data_url)
+api/main.py               # FastAPI /api/* (local dev: full app + static frontend; Vercel: /api/* via pyproject entrypoint)
 main.py                   # Cloud Function: run pipeline + publish positions.json to GCS
+pyproject.toml            # Vercel Python entrypoint (api.main:app) + slim FastAPI deps
 frontend/                 # index.html, app.js, style.css (CesiumJS via CDN)
 data/                     # generated JSON outputs (raw cache is gitignored)
 infra/                    # Terraform: Cloud Function + Cloud Scheduler + GCS bucket
-vercel.json               # Vercel: static frontend output + /api/config function
+vercel.json               # Vercel: static frontend outputDirectory
 ```
 
 ---
@@ -190,19 +190,22 @@ every event.
 ## Deploy
 
 In production the static CesiumJS frontend is served by **Vercel** and reads
-data straight from the public GCS bucket; a single serverless function
-(`api/config.py`) hands the frontend the bucket URL. The FastAPI app
-(`api/main.py`) is kept for local dev only and excluded from the Vercel build
-via `.vercelignore`.
+data straight from the public GCS bucket. A single FastAPI serverless function
+(`api/main.py`, declared as the entrypoint in `pyproject.toml`) serves
+`/api/config`, which hands the frontend the bucket URL.
 
 - **Vercel:** import this repo. No build step — `vercel.json` sets
-  `outputDirectory: "frontend"` and `api/config.py` becomes the `/api/config`
-  serverless function. In the Vercel dashboard set the `DATA_URL` environment
-  variable to the public GCS `positions.json` URL (Terraform outputs it as
-  `positions_json_url`); optionally set `CESIUM_ION_TOKEN`. With `DATA_URL` set
-  the frontend fetches `positions.json` from GCS; without it (local dev) it
-  falls back to the FastAPI `/api/orbits` + `/api/events` endpoints reading the
-  repo's committed `data/*.json`.
+  `outputDirectory: "frontend"`, and `pyproject.toml`'s
+  `tool.vercel.entrypoint = "api.main:app"` makes `api/main.py` the FastAPI
+  serverless function serving `/api/*`. Vercel reads its slim deps from
+  `pyproject.toml` (just `fastapi`); the heavy `requirements.txt` is for the
+  Cloud Function and is excluded from the Vercel build via `.vercelignore`.
+  In the Vercel dashboard set the `DATA_URL` environment variable to the public
+  GCS `positions.json` URL (Terraform outputs it as `positions_json_url`);
+  optionally set `CESIUM_ION_TOKEN`. With `DATA_URL` set the frontend fetches
+  `positions.json` from GCS; without it (local dev) it falls back to the
+  FastAPI `/api/orbits` + `/api/events` endpoints reading the repo's committed
+  `data/*.json`.
 - **Local dev:** `uvicorn api.main:app --reload` serves the same frontend plus
   the `/api/*` endpoints that read `data/*.json` from disk (leave `DATA_URL`
   unset).

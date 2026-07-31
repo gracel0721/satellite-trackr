@@ -18,5 +18,5 @@ data/raw/*.tle
 
 spec.md
 
-
+data/events/events.json
 data/orbits/orbits.json
