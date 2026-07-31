@@ -206,6 +206,20 @@ resource "google_cloudfunctions2_function_iam_member" "invoker" {
   member         = "serviceAccount:${google_service_account.runner.email}"
 }
 
+# Gen2 functions run on Cloud Run, so the scheduler's OIDC-authenticated request
+# is authorized against the *underlying Cloud Run service* IAM (run.routes.invoke).
+# The cloudfunctions.invoker grant above is meant to propagate to it but does
+# not reliably, so grant roles/run.invoker on the Cloud Run service explicitly.
+# Without this the scheduler gets a 403 "lacks run.routes.invoke" on every run.
+resource "google_cloud_run_service_iam_member" "invoker" {
+  location = var.region
+  service  = google_cloudfunctions2_function.refresh.name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.runner.email}"
+
+  depends_on = [google_cloudfunctions2_function.refresh]
+}
+
 # --- Cloud Scheduler: trigger the function every 12 hours ----------------
 resource "google_cloud_scheduler_job" "refresh" {
   name      = var.function_name
@@ -224,6 +238,7 @@ resource "google_cloud_scheduler_job" "refresh" {
 
   depends_on = [
     google_cloudfunctions2_function_iam_member.invoker,
+    google_cloud_run_service_iam_member.invoker,
     google_project_service.apis,
   ]
 }

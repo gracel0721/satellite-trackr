@@ -172,11 +172,13 @@ positions/velocities in km. Each timestep's position is rotated into the
 Earth-fixed frame (ECEF) using the Greenwich mean sidereal time (GMST, IAU 1982
 formula), then scaled to meters — the `Cartesian3` values CesiumJS renders.
 
-**Close-approach detection.** Per timestep, all pairwise differences are formed
-via numpy broadcasting (`P[:,None,:] - P[None,:,:]`) and the Euclidean distance
-computed in one vectorized call. Pairs under the threshold (and optionally
-above a minimum relative closing speed) are recorded. The whole loop is
-timestep-iterative (~1440 iterations, each a `(N,N,3)` tensor ≈ 1 MB), so it
+**Close-approach detection.** Per timestep, satellite positions are indexed in
+a `scipy.spatial.cKDTree` and all pairs within the threshold are queried in
+O(n log n) rather than an O(n²) all-pairs broadcast. Exact Euclidean distance
+and relative closing speed are then computed only for those candidate pairs.
+Pairs are recorded the first timestep a pair crosses into the threshold (a
+"breach"), so a sustained close approach emits one event instead of one per
+timestep. The whole loop is timestep-iterative (~1440 iterations), so it
 never materializes the full `(T,N,N,3)` array.
 
 **Relative velocity.** The magnitude of the pairwise velocity difference

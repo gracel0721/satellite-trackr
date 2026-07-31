@@ -8,6 +8,7 @@ optional cap.
 from __future__ import annotations
 
 import logging
+import os
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -24,6 +25,62 @@ from config import (
 )
 
 log = logging.getLogger(__name__)
+
+
+# --- GCS-backed TLE cache --------------------------------------------------
+# Cloud Functions start with an empty /tmp, so a local-only cache is lost on
+# every cold start and CelesTrak is often unreachable from GCP (connect
+# timeouts). Persisting the last-good TLE set to the data bucket lets the
+# function fall back to it when a live fetch fails, so refreshes keep working
+# even when CelesTrak can't be reached. Set TLE_CACHE_BUCKET (or DATA_BUCKET)
+# to enable; unset => no-op (local dev path). The google-cloud-storage import
+# is lazy so this module loads even where the dep isn't installed (local dev).
+_TLE_CACHE_BUCKET = os.environ.get("TLE_CACHE_BUCKET", "") or os.environ.get("DATA_BUCKET", "")
+_gcs_client = None  # storage.Client, created on first use
+
+
+class TLENotModifiedError(RuntimeError):
+    """CelesTrak returned its 403 "GP data has not updated since…" guard.
+
+    This is NOT a failure — CelesTrak is telling us the group's data is
+    unchanged since our last successful download (it updates ~every 2h and
+    blocks re-downloads in between). The caller should reuse its cache.
+    """
+
+
+def _gcs_blob(group: str):
+    """Return the GCS blob for a group's cached TLEs, or None if caching off."""
+    global _gcs_client
+    if not _TLE_CACHE_BUCKET:
+        return None
+    if _gcs_client is None:
+        from google.cloud import storage  # lazy: not needed for local dev
+        _gcs_client = storage.Client()
+    return _gcs_client.bucket(_TLE_CACHE_BUCKET).blob(f"tles/{group}.tle")
+
+
+def _gcs_write_tle(raw: str, group: str) -> None:
+    """Persist a freshly fetched TLE set to GCS (best-effort)."""
+    blob = _gcs_blob(group)
+    if blob is None:
+        return
+    try:
+        blob.upload_from_string(raw, content_type="text/plain")
+        log.info("Cached TLEs to GCS -> gs://%s/tles/%s.tle", _TLE_CACHE_BUCKET, group)
+    except Exception as exc:  # never let a cache write kill the run
+        log.warning("GCS TLE cache write failed (%s); continuing.", exc)
+
+
+def _gcs_read_tle(group: str) -> str | None:
+    """Return the GCS-cached TLE text for a group, or None if absent/off."""
+    blob = _gcs_blob(group)
+    if blob is None:
+        return None
+    try:
+        return blob.download_as_text()
+    except Exception as exc:
+        log.warning("GCS TLE cache read failed (%s).", exc)
+        return None
 
 
 def _cache_path(group: str, stamp: str) -> Path:
@@ -60,8 +117,16 @@ def fetch_raw_tles(group: str) -> tuple[str, str]:
     for attempt in range(4):
         try:
             resp = requests.get(url, headers=headers, timeout=30)
+            # CelesTrak's anti-poll guard: a 403 whose body says the group data
+            # hasn't changed since our last download. Treat as "use cache".
+            if resp.status_code == 403 and "GP data has not updated" in resp.text:
+                raise TLENotModifiedError(
+                    f"CelesTrak reports '{group}' data unchanged since last download"
+                )
             resp.raise_for_status()
             return resp.text, url
+        except TLENotModifiedError:
+            raise
         except requests.RequestException as exc:
             last_err = exc
             log.warning("Fetch attempt %d failed: %s", attempt + 1, exc)
@@ -79,19 +144,13 @@ def cache_raw(raw: str, group: str) -> Path:
     return path
 
 
-def _load_cached_group(group: str) -> str:
-    """Return the newest cached raw TLE text for a group, or raise if none."""
-    caches = _list_group_caches(group)
-    if not caches:
-        raise RuntimeError(f"No cached TLEs found for group '{group}' in data/raw/.")
-    log.info("Using cached TLEs for %s: %s", group, caches[-1])
-    return caches[-1].read_text(encoding="utf-8")
-
-
 def _fetch_one_group(group: str, force_live: bool = False) -> str:
     """Fetch a single group, using cache if allowed and fresh.
 
-    Falls back to the newest cache if the live fetch fails.
+    Fallback chain on any live-fetch failure (timeout, 429, or the
+    "not updated" guard): newest local cache (any age) → GCS-cached TLEs →
+    raise. On a successful live fetch the TLEs are also persisted to GCS so
+    later cold starts (empty /tmp) can still recover them.
     """
     caches = _list_group_caches(group)
     if not force_live and caches and _cache_is_fresh(caches[-1], CACHE_TTL_HRS):
@@ -101,15 +160,31 @@ def _fetch_one_group(group: str, force_live: bool = False) -> str:
     try:
         raw, _ = fetch_raw_tles(group)
         cache_raw(raw, group)
+        _gcs_write_tle(raw, group)  # persist for cross-cold-start reuse
         return raw
+    except TLENotModifiedError:
+        log.info("CelesTrak reports %s unchanged; reusing cache.", group)
     except Exception as exc:
-        if caches:
-            log.warning("Live fetch for %s failed (%s); falling back to cache.", group, exc)
-            return caches[-1].read_text(encoding="utf-8")
-        raise RuntimeError(
-            f"Live fetch failed for '{group}' and no cached TLEs found. "
-            "Run once while CelesTrak is reachable to seed a cache."
-        ) from exc
+        log.warning("Live fetch for %s failed (%s); falling back to cache.", group, exc)
+
+    # Fallback 1: newest local cache (any age).
+    if caches:
+        log.info("Using local cached TLEs for %s: %s", group, caches[-1])
+        return caches[-1].read_text(encoding="utf-8")
+
+    # Fallback 2: GCS-cached TLEs (the path the Cloud Function relies on,
+    # since /tmp is empty on every cold start).
+    gcs_raw = _gcs_read_tle(group)
+    if gcs_raw is not None:
+        log.info("Using GCS-cached TLEs for %s; seeding local cache.", group)
+        cache_raw(gcs_raw, group)
+        return gcs_raw
+
+    raise RuntimeError(
+        f"Cannot obtain TLEs for '{group}': live fetch failed and no cached "
+        "TLEs found (local or GCS). Seed the cache by running while "
+        "CelesTrak is reachable, or upload to gs://<bucket>/tles/{group}.tle."
+    )
 
 
 def parse_tles(raw: str) -> list[dict]:

@@ -34,8 +34,8 @@ variable "sat_groups" {
 
 variable "memory_mb" {
   type        = number
-  default     = 2048
-  description = "Cloud Function memory. Propagating thousands of sats over 24h needs headroom; 2GiB stays within the free-tier GB-second budget at 2 runs/day."
+  default     = 8192
+  description = "Cloud Function memory. The full Starlink group (~10.8k sats) is held in memory as per-satellite ecef/velocity lists for propagation + analysis; peak is ~5GiB, so 8GiB gives headroom. Still within the free-tier GiB-second budget at 2 runs/day (8GiB x 540s x 2/day ~ 260k GiB-s/mo < 360k free)."
 }
 
 variable "timeout_seconds" {
