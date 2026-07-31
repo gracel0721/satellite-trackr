@@ -97,6 +97,8 @@ data "archive_file" "function_source" {
     ".github",
     "api",
     "README.md",
+    # Vercel-only entrypoint/deps; GCP builds from requirements.txt, not pyproject.
+    "pyproject.toml",
   ]
 }
 

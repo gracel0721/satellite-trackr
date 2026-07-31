@@ -29,7 +29,8 @@ Cloud Function (Cloud Scheduler, every 12h) ──▶ public GCS bucket /positio
                  │
                  ▼
 FastAPI (api/main.py)  ──▶ local dev: /api/config, /api/orbits, /api/events (reads repo data)
-Vercel (api/config.py) ──▶ prod: /api/config only (returns the GCS `data_url`)
+Vercel (api/main.py)   ──▶ prod: /api/* via Vercel auto-detection (api/main.py defines `app`);
+                           /api/config returns the GCS `data_url` (slim FastAPI-only deps)
                  ▼
 CesiumJS frontend (frontend/index.html + app.js)
   fetches positions.json from GCS when `data_url` is set, else the API endpoints
@@ -71,9 +72,9 @@ pipeline/
   propagate.py            # sgp4 → TEME → ECEF (meters) + lat/lon/alt
   analysis.py             # cKDTree close-approach detection + relative velocity
   run_pipeline.py         # orchestrate fetch → propagate → analyze → JSON
-api/main.py               # FastAPI /api/* (local dev: full app + static frontend; Vercel: /api/* via pyproject entrypoint)
+api/main.py               # FastAPI /api/* (local dev: full app + static frontend; Vercel: /api/* via auto-detection)
 main.py                   # Cloud Function: run pipeline + publish positions.json to GCS
-pyproject.toml            # Vercel Python entrypoint (api.main:app) + slim FastAPI deps
+pyproject.toml            # Vercel Python backend: slim FastAPI deps (Vercel auto-detects api/main.py)
 frontend/                 # index.html, app.js, style.css (CesiumJS via CDN)
 data/                     # generated JSON outputs (raw cache is gitignored)
 infra/                    # Terraform: Cloud Function + Cloud Scheduler + GCS bucket
@@ -195,11 +196,11 @@ data straight from the public GCS bucket. A single FastAPI serverless function
 `/api/config`, which hands the frontend the bucket URL.
 
 - **Vercel:** import this repo. No build step — `vercel.json` sets
-  `outputDirectory: "frontend"`, and `pyproject.toml`'s
-  `tool.vercel.entrypoint = "api.main:app"` makes `api/main.py` the FastAPI
-  serverless function serving `/api/*`. Vercel reads its slim deps from
-  `pyproject.toml` (just `fastapi`); the heavy `requirements.txt` is for the
-  Cloud Function and is excluded from the Vercel build via `.vercelignore`.
+  `outputDirectory: "frontend"`. Vercel auto-detects the FastAPI app in
+  `api/main.py` (it defines the top-level `app`) and serves its `/api/*`
+  routes; `pyproject.toml` carries only the slim runtime deps (just `fastapi`).
+  The heavy `requirements.txt` is for the Cloud Function and is excluded from
+  the Vercel build via `.vercelignore`.
   In the Vercel dashboard set the `DATA_URL` environment variable to the public
   GCS `positions.json` URL (Terraform outputs it as `positions_json_url`);
   optionally set `CESIUM_ION_TOKEN`. With `DATA_URL` set the frontend fetches
