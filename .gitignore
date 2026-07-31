@@ -17,3 +17,6 @@ data/raw/*.tle
 .DS_Store
 
 spec.md
+
+data/events/
+data/orbits/
