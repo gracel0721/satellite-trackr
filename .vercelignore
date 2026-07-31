@@ -1,26 +1,26 @@
 # Files excluded from the Vercel deployment. The Vercel build is a static
-# frontend (served from `frontend/`) plus one serverless function (api/config.py)
-# that reads the GCS data URL from env. Everything below is for local dev, the
-# GCP Cloud Function, or the pipeline — not needed (and not wanted) on Vercel.
+# frontend (served from `frontend/`) plus one FastAPI serverless function
+# (api/main.py, declared as the entrypoint in pyproject.toml) that serves
+# /api/config (the GCS positions.json URL) and the other /api/* routes.
+# Vercel reads its slim deps from pyproject.toml, NOT requirements.txt.
+# Everything below is for local dev, the GCP Cloud Function, or the pipeline.
 
 # Local virtualenv + caches
 .venv
 __pycache__
 **/__pycache__
 
-# GCP infra + Cloud Function entry (managed by Terraform, not Vercel)
+# GCP infra + Cloud Function entry + heavy pipeline deps (managed by Terraform,
+# not Vercel). main.py is the Cloud Function; requirements.txt carries its
+# scipy/numpy/pandas/google-cloud-storage deps and is excluded so Vercel uses
+# the slim pyproject.toml instead (no tree-shaking -> would blow the bundle).
 infra
 main.py
-config.py
 pipeline
+requirements.txt
 
 # Generated data — the Vercel frontend reads positions.json from GCS, not the repo
 data
-
-# FastAPI app is for local dev only; exclude so Vercel does not auto-detect it as
-# a function entrypoint (it defines `app` and would otherwise be deployed).
-api/main.py
-api/__init__.py
 
 # Misc
 .github

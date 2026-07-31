@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import Optional
@@ -44,6 +45,13 @@ from config import (  # noqa: E402
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("api")
 
+# Vercel sets VERCEL=1 during build and at runtime. The static frontend is
+# served by `outputDirectory: frontend` (vercel.json), and `data/` is excluded
+# from the build, so on Vercel this app only serves /api/* — it must NOT also
+# claim "/", "/app.js", "/style.css" (would shadow the static host) or try to
+# load on-disk data. Local dev (uvicorn) sets neither and serves everything.
+_IS_VERCEL = bool(os.environ.get("VERCEL"))
+
 app = FastAPI(title="Satellite Collision Risk Tracker")
 
 # In-memory cache of the precomputed data.
@@ -67,7 +75,11 @@ def _load() -> None:
 
 @app.on_event("startup")
 def _startup() -> None:
-    _load()
+    # On Vercel there is no on-disk data (data/ is excluded from the build) and
+    # the frontend reads positions.json from GCS, so skip loading entirely to
+    # keep cold starts fast. Local dev loads the precomputed JSON from disk.
+    if not _IS_VERCEL:
+        _load()
 
 
 @app.get("/api/refresh")
@@ -133,21 +145,22 @@ def get_events(
     return {**payload, "events": filtered, "n_events": len(filtered)}
 
 
-# --- Static frontend -----------------------------------------------------
-# Serve frontend assets (app.js, style.css, favicon) at / and root -> index.html.
-app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
+# --- Static frontend (local dev only) ------------------------------------
+# On Vercel the static frontend is served from `outputDirectory: frontend`
+# (vercel.json), so the FastAPI app must NOT also claim "/", "/app.js", or
+# "/style.css" — that would shadow the static host. These routes only register
+# for local `uvicorn api.main:app` dev, where the app serves the frontend too.
+if not _IS_VERCEL:
+    app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
 
+    @app.get("/")
+    def index() -> FileResponse:
+        return FileResponse(FRONTEND_DIR / "index.html")
 
-@app.get("/")
-def index() -> FileResponse:
-    return FileResponse(FRONTEND_DIR / "index.html")
+    @app.get("/app.js")
+    def app_js() -> FileResponse:
+        return FileResponse(FRONTEND_DIR / "app.js", media_type="application/javascript")
 
-
-@app.get("/app.js")
-def app_js() -> FileResponse:
-    return FileResponse(FRONTEND_DIR / "app.js", media_type="application/javascript")
-
-
-@app.get("/style.css")
-def style_css() -> FileResponse:
-    return FileResponse(FRONTEND_DIR / "style.css", media_type="text/css")
+    @app.get("/style.css")
+    def style_css() -> FileResponse:
+        return FileResponse(FRONTEND_DIR / "style.css", media_type="text/css")

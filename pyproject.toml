@@ -1,0 +1,18 @@
+# Vercel Python entrypoint for the FastAPI backend. Vercel reads deps from
+# here (NOT requirements.txt — that file carries the Cloud Function's heavy
+# pipeline deps and is excluded from the Vercel build via .vercelignore).
+# Keep this list slim: api/main.py only needs FastAPI at runtime, and Vercel
+# does no tree-shaking, so extra deps bloat the serverless bundle toward the
+# size limit.
+[project]
+name = "satellite-trackr-api"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.110",
+]
+
+# Tell Vercel to load the FastAPI `app` from api/main.py (module:variable). This
+# is also what makes /api/config, /api/orbits, etc. live on Vercel.
+[tool.vercel]
+entrypoint = "api.main:app"
