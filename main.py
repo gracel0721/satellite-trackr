@@ -11,6 +11,7 @@ root, so this thin wrapper stays in sync with the local dev path.
 """
 from __future__ import annotations
 
+import gzip
 import json
 import logging
 import os
@@ -55,9 +56,23 @@ def refresh(request):
 
     client = storage.Client()
     blob = client.bucket(DATA_BUCKET).blob("positions.json")
-    blob.upload_from_string(
-        json.dumps(payload, separators=(",", ":")),
-        content_type="application/json",
+    # Upload pre-compressed bytes with Content-Encoding: gzip. GCS then serves
+    # them with that header, so browsers that send Accept-Encoding: gzip (all
+    # modern ones) decompress transparently — fetch().json() on the frontend
+    # is unchanged. This cuts the ~75 MB JSON to ~8 MB on the wire, the dominant
+    # site load bottleneck.
+    json_bytes = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    gz_bytes = gzip.compress(json_bytes, compresslevel=9)
+    # Data refreshes every 12h. A 1h max-age lets reloads reuse the cached ~8 MB;
+    # revalidation afterward returns 304 while the object is unchanged, and a
+    # new object generation (each refresh) changes the ETag so updates are seen.
+    blob.content_encoding = "gzip"
+    blob.cache_control = "public, max-age=3600"
+    blob.upload_from_string(gz_bytes, content_type="application/json")
+    log.info(
+        "Uploaded positions.json -> gs://%s/positions.json (%.1f MB raw -> %.1f MB gz)",
+        DATA_BUCKET,
+        len(json_bytes) / 1e6,
+        len(gz_bytes) / 1e6,
     )
-    log.info("Uploaded positions.json -> gs://%s/positions.json", DATA_BUCKET)
     return {"ok": True, **summary}
