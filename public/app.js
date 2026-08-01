@@ -76,22 +76,12 @@ function renderAlerts(threshold) {
 
   document.getElementById('alertCount').textContent = events.length;
 
-  // Build a per-satellite ECEF lookup keyed by timestamp: { sat_id: { ts: [x,y,z] } }.
-  const t = orbitsData.t || [];
-  const tIndex = {}; t.forEach((ts, i) => { tIndex[ts] = i; });
-  const ecefBySat = {};
-  (orbitsData.orbits || []).forEach(o => {
-    const e = o.ecef_m;
-    ecefBySat[o.sat_id] = (ts) => {
-      const i = tIndex[ts];
-      if (i == null) return null;
-      return [e[i*3], e[i*3+1], e[i*3+2]];
-    };
-  });
-
+  // Each event carries its two satellites' ECEF positions at the event time
+  // (embedded by the pipeline), so we render straight from the event record —
+  // no lookup against the (now coarse) orbit grid. This is what lets the orbit
+  // grid be decimated for size without dropping or mislocating any alert.
   events.forEach((ev, i) => {
-    const a = ecefBySat[ev.sat_a] ? ecefBySat[ev.sat_a](ev.timestamp) : null;
-    const b = ecefBySat[ev.sat_b] ? ecefBySat[ev.sat_b](ev.timestamp) : null;
+    const a = ev.ecef_a, b = ev.ecef_b;
     if (!a || !b) return;
     const t0 = fromIso(ev.timestamp);
     const t1 = Cesium.JulianDate.addSeconds(t0, stepSeconds, new Cesium.JulianDate());

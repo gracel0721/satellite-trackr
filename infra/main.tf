@@ -180,11 +180,12 @@ resource "google_cloudfunctions2_function" "refresh" {
       DATA_BUCKET = local.data_bucket
       DATA_DIR    = "/tmp/data"
       SAT_GROUPS  = var.sat_groups
-      # Analysis runs at full 1-min resolution; only the committed payload is
-      # decimated to 5-min to keep the public JSON small for the browser.
+      # Analysis runs at full 1-min resolution; only the committed orbit payload
+      # is decimated to 10-min to keep the public JSON small for the browser.
+      # Events carry their own ECEF positions, so coarsening drops no alerts.
       TIME_WINDOW_HRS = "24"
       STEP_MIN        = "1"
-      OUTPUT_STEP_MIN = "5"
+      OUTPUT_STEP_MIN = "10"
       # /tmp is empty on every cold start, so never pretend a cache is fresh.
       CACHE_TTL_HRS = "0"
     }

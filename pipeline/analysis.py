@@ -122,6 +122,12 @@ def detect_close_approaches(orbits: list[dict], t_list: list[str]) -> list[dict]
         new_pairs = current_pairs - active_pairs_prev
         for a, b in new_pairs:
             dist_km, rel_vel = pair_info[(a, b)]
+            # Embed both satellites' ECEF positions (meters, int) at the event
+            # time. This lets the frontend render the conjunction straight from
+            # the event record, so it no longer needs to look positions up
+            # against the orbit grid — meaning the orbit grid can be coarsened
+            # for size without dropping or mislocating any alert.
+            pa, pb = P[ti, a], P[ti, b]
             events.append(
                 {
                     "sat_a": ids[a],
@@ -131,6 +137,8 @@ def detect_close_approaches(orbits: list[dict], t_list: list[str]) -> list[dict]
                     "timestamp": global_t[ti],
                     "distance_km": round(dist_km, 3),
                     "rel_vel_km_s": round(rel_vel, 3) if FLAG_REL_VEL else None,
+                    "ecef_a": [int(round(pa[0])), int(round(pa[1])), int(round(pa[2]))],
+                    "ecef_b": [int(round(pb[0])), int(round(pb[1])), int(round(pb[2]))],
                 }
             )
 
