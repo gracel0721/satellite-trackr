@@ -14,10 +14,14 @@ __pycache__
 # not Vercel). main.py is the Cloud Function; requirements.txt carries its
 # scipy/numpy/pandas/google-cloud-storage deps and is excluded so Vercel uses
 # the slim pyproject.toml instead (no tree-shaking -> would blow the bundle).
+# NOTE: the leading slash anchors these to the repo root. A bare "main.py"
+# would also match api/main.py (gitignore patterns with no path separator
+# match at any depth) and strip the FastAPI entrypoint from the build — which
+# is exactly the "No FastAPI entrypoint found" error.
 infra
-main.py
+/main.py
 pipeline
-requirements.txt
+/requirements.txt
 
 # Generated data — the Vercel frontend reads positions.json from GCS, not the repo
 data
