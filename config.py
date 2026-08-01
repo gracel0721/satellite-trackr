@@ -35,12 +35,12 @@ SAT_GROUPS = [
 # --- Propagation window --------------------------------------------------
 TIME_WINDOW_HRS = int(os.environ.get("TIME_WINDOW_HRS", "24"))  # span to propagate
 STEP_MIN = int(os.environ.get("STEP_MIN", "1"))                # minutes between samples for analysis
-# Output grid for the frontend JSON. Defaults to 10 minutes so the app stays
+# Output grid for the frontend payload. Defaults to 20 minutes so the app stays
 # responsive when processing thousands of satellites. Analysis still runs at
 # full ``STEP_MIN`` resolution; only the committed orbit payload is decimated
 # (events carry their own ECEF positions, so no alert is dropped). Set to
 # ``STEP_MIN`` for full-resolution output.
-_output_step_raw = os.environ.get("OUTPUT_STEP_MIN", "10").strip()
+_output_step_raw = os.environ.get("OUTPUT_STEP_MIN", "20").strip()
 OUTPUT_STEP_MIN = int(_output_step_raw) if _output_step_raw else STEP_MIN
 
 # Optional cap on total satellites processed. Empty/unset means no cap (process
