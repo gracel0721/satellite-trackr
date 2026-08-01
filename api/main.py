@@ -46,10 +46,12 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(messag
 log = logging.getLogger("api")
 
 # Vercel sets VERCEL=1 during build and at runtime. The static frontend is
-# served by `outputDirectory: frontend` (vercel.json), and `data/` is excluded
-# from the build, so on Vercel this app only serves /api/* — it must NOT also
-# claim "/", "/app.js", "/style.css" (would shadow the static host) or try to
-# load on-disk data. Local dev (uvicorn) sets neither and serves everything.
+# served from the public/ directory (Vercel's FastAPI preset serves public/ at
+# the site root by default; outputDirectory is NOT honored for static under the
+# FastAPI preset), and `data/` is excluded from the build, so on Vercel this app
+# only serves /api/* — it must NOT also claim "/", "/app.js", "/style.css"
+# (would shadow the static host) or try to load on-disk data. Local dev
+# (uvicorn) sets neither and serves everything.
 _IS_VERCEL = bool(os.environ.get("VERCEL"))
 
 app = FastAPI(title="Satellite Collision Risk Tracker")
@@ -146,10 +148,11 @@ def get_events(
 
 
 # --- Static frontend (local dev only) ------------------------------------
-# On Vercel the static frontend is served from `outputDirectory: frontend`
-# (vercel.json), so the FastAPI app must NOT also claim "/", "/app.js", or
-# "/style.css" — that would shadow the static host. These routes only register
-# for local `uvicorn api.main:app` dev, where the app serves the frontend too.
+# On Vercel the static frontend is served from the public/ directory (Vercel's
+# FastAPI preset serves public/ at the site root by default), so the FastAPI app
+# must NOT also claim "/", "/app.js", or "/style.css" — that would shadow the
+# static host. These routes only register for local `uvicorn api.main:app`
+# dev, where the app serves the frontend too.
 if not _IS_VERCEL:
     app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
 

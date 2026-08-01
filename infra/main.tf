@@ -91,7 +91,7 @@ data "archive_file" "function_source" {
     ".venv",
     ".git",
     "data",
-    "frontend",
+    "public",
     "plans",
     "infra",
     ".github",

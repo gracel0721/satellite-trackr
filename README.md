@@ -75,10 +75,10 @@ pipeline/
 api/main.py               # FastAPI /api/* (local dev: full app + static frontend; Vercel: /api/* via auto-detection)
 main.py                   # Cloud Function: run pipeline + publish positions.json to GCS
 pyproject.toml            # Vercel Python backend: slim FastAPI deps (Vercel auto-detects api/main.py)
-frontend/                 # index.html, app.js, style.css (CesiumJS via CDN)
+public/                   # index.html, app.js, style.css (CesiumJS via CDN) — Vercel serves public/ at root
 data/                     # generated JSON outputs (raw cache is gitignored)
 infra/                    # Terraform: Cloud Function + Cloud Scheduler + GCS bucket
-vercel.json               # Vercel: static frontend outputDirectory
+vercel.json               # Vercel project config (no build step)
 ```
 
 ---
@@ -195,12 +195,14 @@ data straight from the public GCS bucket. A single FastAPI serverless function
 (`api/main.py`, declared as the entrypoint in `pyproject.toml`) serves
 `/api/config`, which hands the frontend the bucket URL.
 
-- **Vercel:** import this repo. No build step — `vercel.json` sets
-  `outputDirectory: "frontend"`. Vercel auto-detects the FastAPI app in
-  `api/main.py` (it defines the top-level `app`) and serves its `/api/*`
-  routes; `pyproject.toml` carries only the slim runtime deps (just `fastapi`).
-  The heavy `requirements.txt` is for the Cloud Function and is excluded from
-  the Vercel build via `.vercelignore`.
+- **Vercel:** import this repo. No build step. The static frontend lives in
+  `public/`, which Vercel's FastAPI preset serves at the site root by default
+  (do NOT use `outputDirectory` — the FastAPI preset does not honor it for
+  static assets, which is why the frontend previously 404'd at `/`). Vercel
+  auto-detects the FastAPI app in `api/main.py` (it defines the top-level
+  `app`) and serves its `/api/*` routes; `pyproject.toml` carries only the
+  slim runtime deps (just `fastapi`). The heavy `requirements.txt` is for the
+  Cloud Function and is excluded from the Vercel build via `.vercelignore`.
   In the Vercel dashboard set the `DATA_URL` environment variable to the public
   GCS `positions.json` URL (Terraform outputs it as `positions_json_url`);
   optionally set `CESIUM_ION_TOKEN`. With `DATA_URL` set the frontend fetches
