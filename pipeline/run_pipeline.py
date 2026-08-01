@@ -59,7 +59,12 @@ def _prepare_output(
     t_list: list[str],
     factor: int,
 ) -> tuple[list[dict], list[dict], list[str]]:
-    """Build the frontend payload, optionally decimating the time grid."""
+    """Build the frontend payload, optionally decimating the time grid.
+
+    Events carry their own ECEF positions (embedded by analysis), so they no
+    longer need to align to the orbit grid — every detected conjunction is kept
+    regardless of the decimation factor. Only the orbit samples are decimated.
+    """
     if factor <= 1:
         orbits_out = [
             {"sat_id": o["sat_id"], "name": o["name"], "ecef_m": o["ecef_m"]}
@@ -68,7 +73,6 @@ def _prepare_output(
         return orbits_out, events, t_list
 
     out_t = t_list[::factor]
-    allowed = set(out_t)
     orbits_out = [
         {
             "sat_id": o["sat_id"],
@@ -77,14 +81,13 @@ def _prepare_output(
         }
         for o in orbits
     ]
-    out_events = [e for e in events if e["timestamp"] in allowed]
     log.info(
-        "Decimated frontend payload by factor=%d: %d timesteps, %d events",
+        "Decimated orbit grid by factor=%d: %d timesteps, %d events (kept all)",
         factor,
         len(out_t),
-        len(out_events),
+        len(events),
     )
-    return orbits_out, out_events, out_t
+    return orbits_out, events, out_t
 
 
 def run(groups: list[str] = SAT_GROUPS) -> dict:

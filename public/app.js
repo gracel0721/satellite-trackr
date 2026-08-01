@@ -6,19 +6,55 @@ const MAX_ALERT_LINES = 400; // cap rendered event lines for performance
 
 let viewer, satEntities = {}, eventsData = [], orbitsData = null, config = {};
 let stepSeconds = 60; // derived from output time grid after data loads
+// In production the ECEF samples arrive as a raw int32 ArrayBuffer (no JSON
+// parse); this is the typed-array view over it. Null in local dev, where the
+// samples live inside each orbit's `ecef_m` JSON array.
+let ecefCoords = null;
 
 function fromIso(s) { return Cesium.JulianDate.fromIso8601(s); }
 
-// Load config first, then data. In production `config.data_url` points at the
-// merged positions.json the Cloud Function publishes to a public GCS bucket;
-// the frontend fetches it straight from there (not the repo's committed data
-// files). In local dev `data_url` is empty, so we fall back to the FastAPI
+// Fetch /api/config. `config.data_url` points at the positions object the
+// Cloud Function publishes to a public GCS bucket; the frontend fetches it
+// straight from there. Empty in local dev, where we fall back to the FastAPI
 // endpoints that read data/orbits + data/events from disk.
-async function loadAll() {
+async function fetchConfig() {
   config = await fetch('/api/config').then(r => r.json());
+}
+
+// In production the Cloud Function publishes a binary container (magic "STB1")
+// at `positions.bin` in the same bucket as the legacy `positions.json` URL. The
+// header is a small JSON object; the large ECEF sample array is a raw
+// little-endian int32 blob the browser views directly (no JSON.parse), which
+// is the point — it removes the dominant parse cost and shrinks the wire size.
+function parseBinaryContainer(buf) {
+  const dv = new DataView(buf);
+  const hdrLen = dv.getUint32(4, true); // little-endian, after the 4-byte magic
+  const hdrJson = new TextDecoder().decode(new Uint8Array(buf, 8, hdrLen));
+  const data = JSON.parse(hdrJson);
+  // The int32 ECEF blob starts after the header, 4-byte aligned.
+  const arrOffset = Math.ceil((8 + hdrLen) / 4) * 4;
+  ecefCoords = new Int32Array(buf, arrOffset, (buf.byteLength - arrOffset) / 4);
+  return data;
+}
+
+// Load the data payload. Production prefers the binary positions.bin and falls
+// back to the legacy JSON positions.json if it is missing (e.g. mid-deploy, or
+// before the Cloud Function has switched over). Local dev reads the JSON
+// endpoints directly.
+async function loadData() {
   if (config.data_url) {
-    // positions.json = orbits payload + a merged `events` array, so it stands
-    // in for both orbitsData and eventsData.
+    const binUrl = config.data_url.replace(/positions\.json$/, 'positions.bin');
+    try {
+      const r = await fetch(binUrl);
+      if (!r.ok) throw new Error('positions.bin not available');
+      const data = parseBinaryContainer(await r.arrayBuffer());
+      orbitsData = data;
+      eventsData = data;
+      return;
+    } catch (e) {
+      console.warn('Falling back to JSON positions.json:', e);
+      ecefCoords = null;
+    }
     const positions = await fetch(config.data_url).then(r => r.json());
     orbitsData = positions;
     eventsData = positions;
@@ -35,13 +71,32 @@ function buildSatellites() {
   const t = orbitsData.t || [];
   const start = fromIso(t[0]), stop = fromIso(t[t.length - 1]);
   const n = t.length;
+  const stride = n * 3; // int32 values per satellite row in the binary blob
 
-  orbits.forEach(o => {
+  orbits.forEach((o, i) => {
     const pos = new Cesium.SampledPositionProperty(Cesium.ReferenceFrame.FIXED);
-    const e = o.ecef_m;
-    const m = Math.floor(e.length / 3); // timesteps for this sat (== n normally)
-    for (let i = 0; i < m; i++) {
-      pos.addSample(fromIso(t[i]), new Cesium.Cartesian3(e[i*3], e[i*3+1], e[i*3+2]));
+    // Smooth interpolation between the (coarse, 20-min) waypoints so LEO
+    // markers glide along the orbit arc instead of cutting straight chords
+    // between sparse samples.
+    pos.setInterpolationOptions({
+      interpolationAlgorithm: Cesium.LagrangePolynomialApproximation,
+      interpolationDegree: 5,
+    });
+    if (ecefCoords) {
+      // Production binary path: read the flat int32 blob (sat-major, step-major).
+      const base = i * stride;
+      const m = Math.min(o.n_steps || n, n); // a few sats drop timesteps
+      for (let j = 0; j < m; j++) {
+        pos.addSample(fromIso(t[j]),
+          new Cesium.Cartesian3(ecefCoords[base + j*3], ecefCoords[base + j*3 + 1], ecefCoords[base + j*3 + 2]));
+      }
+    } else {
+      // Local dev JSON path: samples live in each orbit's ecef_m array.
+      const e = o.ecef_m;
+      const m = Math.floor(e.length / 3); // timesteps for this sat (== n normally)
+      for (let j = 0; j < m; j++) {
+        pos.addSample(fromIso(t[j]), new Cesium.Cartesian3(e[j*3], e[j*3 + 1], e[j*3 + 2]));
+      }
     }
     satEntities[o.sat_id] = viewer.entities.add({
       id: 'sat-' + o.sat_id,
@@ -76,22 +131,12 @@ function renderAlerts(threshold) {
 
   document.getElementById('alertCount').textContent = events.length;
 
-  // Build a per-satellite ECEF lookup keyed by timestamp: { sat_id: { ts: [x,y,z] } }.
-  const t = orbitsData.t || [];
-  const tIndex = {}; t.forEach((ts, i) => { tIndex[ts] = i; });
-  const ecefBySat = {};
-  (orbitsData.orbits || []).forEach(o => {
-    const e = o.ecef_m;
-    ecefBySat[o.sat_id] = (ts) => {
-      const i = tIndex[ts];
-      if (i == null) return null;
-      return [e[i*3], e[i*3+1], e[i*3+2]];
-    };
-  });
-
+  // Each event carries its two satellites' ECEF positions at the event time
+  // (embedded by the pipeline), so we render straight from the event record —
+  // no lookup against the (now coarse) orbit grid. This is what lets the orbit
+  // grid be decimated for size without dropping or mislocating any alert.
   events.forEach((ev, i) => {
-    const a = ecefBySat[ev.sat_a] ? ecefBySat[ev.sat_a](ev.timestamp) : null;
-    const b = ecefBySat[ev.sat_b] ? ecefBySat[ev.sat_b](ev.timestamp) : null;
+    const a = ev.ecef_a, b = ev.ecef_b;
     if (!a || !b) return;
     const t0 = fromIso(ev.timestamp);
     const t1 = Cesium.JulianDate.addSeconds(t0, stepSeconds, new Cesium.JulianDate());
@@ -147,11 +192,14 @@ function computeStepSeconds(t) {
 }
 
 async function init() {
-  // Use a free imagery source so the globe renders without a Cesium Ion token.
-  await loadAll();
-  stepSeconds = computeStepSeconds(orbitsData.t);
-  if (config.cesium_ion_token) Cesium.Ion.defaultAccessToken = config.cesium_ion_token;
+  // Fetch config first (small), then kick off the (slow) data fetch so it
+  // overlaps with globe construction below — the globe needs only Cesium, not
+  // the orbit data, so it can render before the data lands.
+  await fetchConfig();
+  const dataP = loadData();
 
+  if (config.cesium_ion_token) Cesium.Ion.defaultAccessToken = config.cesium_ion_token;
+  // Use a free imagery source so the globe renders without a Cesium Ion token.
   const imageryProvider = new Cesium.OpenStreetMapImageryProvider({
     url: 'https://tile.openstreetmap.org/',
   });
@@ -164,6 +212,10 @@ async function init() {
   viewer.imageryLayers.addImageryProvider(imageryProvider);
   // Keep satellites visible above the globe surface.
   viewer.scene.globe.depthTestAgainstTerrain = false;
+
+  // Now block on the data and build satellites on top of the live globe.
+  await dataP;
+  stepSeconds = computeStepSeconds(orbitsData.t);
   if (!orbitsData.orbits) { document.getElementById('meta').textContent = 'No data — run the pipeline.'; return; }
 
   buildSatellites();
