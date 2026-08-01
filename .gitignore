@@ -17,3 +17,6 @@ data/raw/*.tle
 .DS_Store
 
 spec.md
+
+data/events/events.json
+data/orbits/orbits.json

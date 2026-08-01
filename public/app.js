@@ -9,12 +9,25 @@ let stepSeconds = 60; // derived from output time grid after data loads
 
 function fromIso(s) { return Cesium.JulianDate.fromIso8601(s); }
 
+// Load config first, then data. In production `config.data_url` points at the
+// merged positions.json the Cloud Function publishes to a public GCS bucket;
+// the frontend fetches it straight from there (not the repo's committed data
+// files). In local dev `data_url` is empty, so we fall back to the FastAPI
+// endpoints that read data/orbits + data/events from disk.
 async function loadAll() {
-  [config, orbitsData, eventsData] = await Promise.all([
-    fetch('/api/config').then(r => r.json()),
-    fetch('/api/orbits').then(r => r.json()),
-    fetch('/api/events').then(r => r.json()),
-  ]);
+  config = await fetch('/api/config').then(r => r.json());
+  if (config.data_url) {
+    // positions.json = orbits payload + a merged `events` array, so it stands
+    // in for both orbitsData and eventsData.
+    const positions = await fetch(config.data_url).then(r => r.json());
+    orbitsData = positions;
+    eventsData = positions;
+  } else {
+    [orbitsData, eventsData] = await Promise.all([
+      fetch('/api/orbits').then(r => r.json()),
+      fetch('/api/events').then(r => r.json()),
+    ]);
+  }
 }
 
 function buildSatellites() {
@@ -156,7 +169,7 @@ async function init() {
   buildSatellites();
 
   document.getElementById('meta').textContent =
-    `${config.sat_group} · ${orbitsData.n_satellites} sats · ${orbitsData.n_timesteps} steps · fetched ${config.fetch_time || ''}`;
+    `${orbitsData.group || config.sat_group} · ${orbitsData.n_satellites} sats · ${orbitsData.n_timesteps} steps · fetched ${orbitsData.fetch_time || config.fetch_time || ''}`;
 
   const slider = document.getElementById('threshold');
   const thrVal = document.getElementById('thrVal');

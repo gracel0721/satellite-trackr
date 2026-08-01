@@ -15,7 +15,11 @@ ORBITS_DIR = DATA_DIR / "orbits"
 EVENTS_DIR = DATA_DIR / "events"
 ORBITS_FILE = ORBITS_DIR / "orbits.json"
 EVENTS_FILE = EVENTS_DIR / "events.json"
-FRONTEND_DIR = BASE_DIR / "frontend"
+# Static frontend lives in public/ — Vercel's FastAPI preset serves the public/
+# directory at the site root by default (NOT outputDirectory, which the FastAPI
+# preset does not honor for static assets). Local dev (uvicorn) also serves from
+# here via api/main.py's VERCEL-guarded static routes.
+FRONTEND_DIR = BASE_DIR / "public"
 
 # --- Data source ---------------------------------------------------------
 # CelesTrak GP endpoint. GROUP selects the catalog; FORMAT=tle returns the
@@ -64,3 +68,9 @@ FLAG_REL_VEL = True  # include relative velocity in event output
 # Optional Cesium Ion access token for terrain/imagery. If unset the app
 # falls back to free default imagery/terrain so it runs without an account.
 CESIUM_ION_TOKEN = os.environ.get("CESIUM_ION_TOKEN", "")
+
+# Public URL of the merged positions.json the Cloud Function publishes to GCS.
+# When set (production deploy), the frontend fetches the data straight from
+# the bucket instead of the repo's committed data files. Leave empty for local
+# dev, where the frontend falls back to the /api/orbits + /api/events endpoints.
+DATA_URL = os.environ.get("DATA_URL", "")

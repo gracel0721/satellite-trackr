@@ -1,0 +1,34 @@
+# Files excluded from the Vercel deployment. The Vercel build is a static
+# frontend (served from `frontend/`) plus one FastAPI serverless function
+# (api/main.py, declared as the entrypoint in pyproject.toml) that serves
+# /api/config (the GCS positions.json URL) and the other /api/* routes.
+# Vercel reads its slim deps from pyproject.toml, NOT requirements.txt.
+# Everything below is for local dev, the GCP Cloud Function, or the pipeline.
+
+# Local virtualenv + caches
+.venv
+__pycache__
+**/__pycache__
+
+# GCP infra + Cloud Function entry + heavy pipeline deps (managed by Terraform,
+# not Vercel). main.py is the Cloud Function; requirements.txt carries its
+# scipy/numpy/pandas/google-cloud-storage deps and is excluded so Vercel uses
+# the slim pyproject.toml instead (no tree-shaking -> would blow the bundle).
+# NOTE: the leading slash anchors these to the repo root. A bare "main.py"
+# would also match api/main.py (gitignore patterns with no path separator
+# match at any depth) and strip the FastAPI entrypoint from the build — which
+# is exactly the "No FastAPI entrypoint found" error.
+infra
+/main.py
+pipeline
+/requirements.txt
+
+# Generated data — the Vercel frontend reads positions.json from GCS, not the repo
+data
+
+# Misc
+.github
+plans
+README.md
+.gitignore
+.vercelignore

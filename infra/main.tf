@@ -91,12 +91,14 @@ data "archive_file" "function_source" {
     ".venv",
     ".git",
     "data",
-    "frontend",
+    "public",
     "plans",
     "infra",
     ".github",
     "api",
     "README.md",
+    # Vercel-only entrypoint/deps; GCP builds from requirements.txt, not pyproject.
+    "pyproject.toml",
   ]
 }
 
@@ -125,6 +127,15 @@ resource "google_storage_bucket" "data" {
   force_destroy            = true
   uniform_bucket_level_access = true
   public_access_prevention = "inherited"
+
+  # The browser fetches positions.json directly from this bucket (different
+  # origin than the app), so it must serve CORS headers for cross-origin GETs.
+  cors {
+    origin          = ["*"]
+    method          = ["GET", "HEAD"]
+    response_header = ["Content-Type", "Access-Control-Allow-Origin"]
+    max_age_seconds = 3600
+  }
 }
 
 # Anyone can read positions.json — the frontend fetches it straight from GCS.
@@ -197,7 +208,21 @@ resource "google_cloudfunctions2_function_iam_member" "invoker" {
   member         = "serviceAccount:${google_service_account.runner.email}"
 }
 
-# --- Cloud Scheduler: trigger the function every 3 hours ----------------
+# Gen2 functions run on Cloud Run, so the scheduler's OIDC-authenticated request
+# is authorized against the *underlying Cloud Run service* IAM (run.routes.invoke).
+# The cloudfunctions.invoker grant above is meant to propagate to it but does
+# not reliably, so grant roles/run.invoker on the Cloud Run service explicitly.
+# Without this the scheduler gets a 403 "lacks run.routes.invoke" on every run.
+resource "google_cloud_run_service_iam_member" "invoker" {
+  location = var.region
+  service  = google_cloudfunctions2_function.refresh.name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.runner.email}"
+
+  depends_on = [google_cloudfunctions2_function.refresh]
+}
+
+# --- Cloud Scheduler: trigger the function every 12 hours ----------------
 resource "google_cloud_scheduler_job" "refresh" {
   name      = var.function_name
   schedule  = var.schedule
@@ -215,6 +240,7 @@ resource "google_cloud_scheduler_job" "refresh" {
 
   depends_on = [
     google_cloudfunctions2_function_iam_member.invoker,
+    google_cloud_run_service_iam_member.invoker,
     google_project_service.apis,
   ]
 }

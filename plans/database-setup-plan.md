@@ -2,7 +2,7 @@
 
 This deploys a small serverless backend that fetches Starlink TLE data, propagates
 positions, flags close approaches, and writes the result to a public JSON file
-your Cesium frontend can fetch directly. Runs every 3 hours, entirely on GCP's
+your Cesium frontend can fetch directly. Runs every 12 hours, entirely on GCP's
 Always Free tier.
 
 ## 1. Install the tools
@@ -80,7 +80,7 @@ your browser just renders it, no more heavy computation client-side.
 
 ## Free tier notes
 
-- Cloud Function: runs 8x/day, ~300s each → nowhere close to the 2M invocations
+- Cloud Function: runs 2x/day, ~300s each → nowhere close to the 2M invocations
   / 400,000 GB-seconds free monthly allowance
 - Cloud Scheduler: 1 job used, 3 are free
 - Cloud Storage: a few MB of JSON, well under the 5GB free allowance (must stay

@@ -6,3 +6,6 @@ requests>=2.31
 fastapi>=0.110
 uvicorn[standard]>=0.27
 python-dateutil>=2.8
+# Cloud Function (main.py): HTTP entry + GCS upload of positions.json.
+functions-framework>=3.0
+google-cloud-storage>=2.10
