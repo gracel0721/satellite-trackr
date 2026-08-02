@@ -1,5 +1,7 @@
 # Satellite Collision Risk Tracker 🛰️
 
+[Live app](https://satellite-trackr.vercel.app/)
+
 Pulls **live satellite orbital data** from
 [CelesTrak](https://celestrak.org), calculates orbits with the sgp4
 algorithm, computes close-approach ("collision risk") events between
