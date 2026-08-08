@@ -28,7 +28,8 @@ def detect_close_approaches(orbits: list[dict], t_list: list[str]) -> list[dict]
 
     Returns a list of event dicts sorted by distance (km) ascending::
 
-        {sat_a, sat_b, name_a, name_b, timestamp, distance_km, rel_vel_km_s}
+        {sat_a, sat_b, name_a, name_b, constellation_a, constellation_b,
+         timestamp, distance_km, rel_vel_km_s}
     """
     if len(orbits) < 2:
         log.warning("Fewer than 2 satellites; no close approaches possible.")
@@ -37,6 +38,9 @@ def detect_close_approaches(orbits: list[dict], t_list: list[str]) -> list[dict]
     global_t = t_list
     ids = [o["sat_id"] for o in orbits]
     names = {o["sat_id"]: o["name"] for o in orbits}
+    # Constellation tag flows from fetch.py -> propagate.py -> here. Use
+    # .get() so legacy payloads without the field still emit events.
+    constellations = {o["sat_id"]: o.get("constellation", "unknown") for o in orbits}
     N = len(orbits)
     T = len(global_t)
 
@@ -134,6 +138,8 @@ def detect_close_approaches(orbits: list[dict], t_list: list[str]) -> list[dict]
                     "sat_b": ids[b],
                     "name_a": names[ids[a]],
                     "name_b": names[ids[b]],
+                    "constellation_a": constellations[ids[a]],
+                    "constellation_b": constellations[ids[b]],
                     "timestamp": global_t[ti],
                     "distance_km": round(dist_km, 3),
                     "rel_vel_km_s": round(rel_vel, 3) if FLAG_REL_VEL else None,

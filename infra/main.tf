@@ -156,7 +156,7 @@ resource "google_storage_bucket_iam_member" "fn_write" {
 resource "google_cloudfunctions2_function" "refresh" {
   name        = var.function_name
   location    = var.region
-  description = "Fetch Starlink TLEs, propagate positions, flag close approaches, publish positions.json."
+  description = "Fetch multi-constellation TLEs, propagate positions, flag close approaches, publish positions.bin."
 
   build_config {
     runtime     = "python311"
@@ -180,6 +180,7 @@ resource "google_cloudfunctions2_function" "refresh" {
       DATA_BUCKET = local.data_bucket
       DATA_DIR    = "/tmp/data"
       SAT_GROUPS  = var.sat_groups
+      N_MAX       = var.n_max
       # Analysis runs at full 1-min resolution; only the committed orbit payload
       # is decimated to 20-min to keep the public payload small for the browser.
       # Events carry their own ECEF positions, so coarsening drops no alerts.

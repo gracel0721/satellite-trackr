@@ -134,6 +134,9 @@ def propagate(records: list[dict], start: datetime | None = None) -> tuple[list[
             {
                 "sat_id": rec["sat_id"],
                 "name": rec["name"],
+                # CelesTrak source group — used for per-constellation coloring
+                # and cross-group conjunction tagging in the frontend.
+                "constellation": rec.get("constellation", "unknown"),
                 # Positions for the frontend (meters) and velocity for the
                 # analysis step (kept in memory only — not written to JSON).
                 "ecef_m": ecef_m.reshape(-1).tolist(),

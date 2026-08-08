@@ -69,7 +69,16 @@ def _build_container(orbits: dict, events: dict) -> bytes:
     for o in orbits["orbits"]:
         e = np.array(o["ecef_m"], dtype="<i4")
         n_steps = e.size // 3
-        orbit_meta.append({"sat_id": o["sat_id"], "name": o["name"], "n_steps": n_steps})
+        # Constellation is optional in the header for backwards-compat with
+        # pre-multi-constellation containers; the frontend defaults to SKYBLUE.
+        orbit_meta.append(
+            {
+                "sat_id": o["sat_id"],
+                "name": o["name"],
+                "constellation": o.get("constellation", "unknown"),
+                "n_steps": n_steps,
+            }
+        )
         # Pad partial satellites (propagation dropouts) to the full grid stride
         # so every row is uniform and the frontend can index by sat*stride.
         if e.size < stride:

@@ -25,5 +25,14 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: system-ui, Segoe 
 .alert .a { color: #fff; font-weight: 600; }
 .alert .d { color: #fde68a; }
 .alert .t { color: #9ca3af; font-size: 11px; }
+.alert .c { color: #9ca3af; font-size: 10px; letter-spacing: 0.4px; margin-bottom: 2px; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 10px; }
+.legend-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #e5e7eb; }
+.legend-item .swatch {
+  width: 10px; height: 10px; border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.7); display: inline-block;
+}
+.legend-item .count { color: #9ca3af; margin-left: 2px; }
 
 .cesium-viewer-bottom { display: none; }

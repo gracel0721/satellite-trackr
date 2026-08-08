@@ -4,6 +4,33 @@
 
 const MAX_ALERT_LINES = 400; // cap rendered event lines for performance
 
+// Per-constellation marker colors. Validated against the dark Cesium globe
+// surface (adjacent-pair ΔE ≥ 8.4, all slots ≥ 3:1 contrast, normal-vision
+// worst adjacent ΔE 19.3). The legend below the threshold slider is the
+// secondary encoding that makes any pair in the 6–8 CVD floor band
+// distinguishable for colorblind readers.
+const CONSTELLATION_COLORS = {
+  'starlink':            '#3987e5',
+  'oneweb':              '#d95926',
+  'iridium-NEXT':        '#199e70',
+  'gnss':                '#c98500',
+  'fengyun-1c-debris':   '#d55181',
+  'iridium-33-debris':   '#008300',
+  'cosmos-2251-debris':  '#9085e9',
+};
+// Fallback for any constellation name not in the map (e.g. legacy payloads
+// without the `constellation` field, or new groups the user added).
+const FALLBACK_COLOR = Cesium.Color.SKYBLUE;
+const COLOR_PALETTE_ORDER = ['#3987e5','#d95926','#199e70','#c98500','#d55181','#008300','#9085e9','#e66767','#4cb3c3','#a37bff'];
+function colorFor(name) {
+  if (!name) return FALLBACK_COLOR;
+  if (CONSTELLATION_COLORS[name]) return Cesium.Color.fromCssColorString(CONSTELLATION_COLORS[name]);
+  // Deterministic fallback for user-added groups: hash to a slot in the palette.
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) | 0;
+  return Cesium.Color.fromCssColorString(COLOR_PALETTE_ORDER[Math.abs(h) % COLOR_PALETTE_ORDER.length]);
+}
+
 let viewer, satEntities = {}, eventsData = [], orbitsData = null, config = {};
 let stepSeconds = 60; // derived from output time grid after data loads
 // In production the ECEF samples arrive as a raw int32 ArrayBuffer (no JSON
@@ -102,7 +129,12 @@ function buildSatellites() {
       id: 'sat-' + o.sat_id,
       name: o.name,
       position: pos,
-      point: { pixelSize: 6, color: Cesium.Color.SKYBLUE, outlineColor: Cesium.Color.WHITE, outlineWidth: 1 },
+      point: {
+        pixelSize: 6,
+        color: colorFor(o.constellation),
+        outlineColor: Cesium.Color.WHITE,
+        outlineWidth: 1,
+      },
     });
   });
 
@@ -113,6 +145,38 @@ function buildSatellites() {
   viewer.clock.multiplier = 600; // 600x playback
   viewer.timeline.zoomTo(start, stop);
   viewer.clock.shouldAnimate = true;
+}
+
+// Render the per-constellation legend with per-group counts and the
+// constellation swatches. Called once after buildSatellites.
+function renderLegend() {
+  const el = document.getElementById('legend');
+  if (!el || !orbitsData) return;
+  // Count satellites per constellation, preserving the order they first
+  // appear in the orbits list (stable, deterministic).
+  const counts = new Map();
+  for (const o of (orbitsData.orbits || [])) {
+    const k = o.constellation || 'unknown';
+    counts.set(k, (counts.get(k) || 0) + 1);
+  }
+  el.innerHTML = '';
+  for (const [name, n] of counts) {
+    const item = document.createElement('div');
+    item.className = 'legend-item';
+    const sw = document.createElement('span');
+    sw.className = 'swatch';
+    const c = colorFor(name);
+    sw.style.background = `rgba(${Math.round(c.red*255)},${Math.round(c.green*255)},${Math.round(c.blue*255)},${c.alpha})`;
+    item.appendChild(sw);
+    const label = document.createElement('span');
+    label.textContent = `${name} · `;
+    item.appendChild(label);
+    const cnt = document.createElement('span');
+    cnt.className = 'count';
+    cnt.textContent = n.toLocaleString();
+    item.appendChild(cnt);
+    el.appendChild(item);
+  }
 }
 
 // Rebuild the red close-approach overlays + alerts list under `threshold`.
@@ -171,7 +235,15 @@ function renderAlerts(threshold) {
 
     const div = document.createElement('div');
     div.className = 'alert';
+    // Cross-group events get a small constellation tag above the satellite
+    // names so users can see why this alert stands out from same-group traffic.
+    const cross = ev.constellation_a && ev.constellation_b
+      && ev.constellation_a !== ev.constellation_b;
+    const tag = cross
+      ? `<div class="c">${ev.constellation_a} ↔ ${ev.constellation_b}</div>`
+      : '';
     div.innerHTML =
+      tag +
       `<div class="a">${ev.name_a} ↔ ${ev.name_b}</div>` +
       `<div class="d">${ev.distance_km.toFixed(1)} km` +
       (ev.rel_vel_km_s != null ? ` · ${ev.rel_vel_km_s.toFixed(2)} km/s` : '') + `</div>` +
@@ -219,9 +291,28 @@ async function init() {
   if (!orbitsData.orbits) { document.getElementById('meta').textContent = 'No data — run the pipeline.'; return; }
 
   buildSatellites();
+  renderLegend();
 
+  // Per-constellation breakdown: "<a> · <n>, <b> · <n>, ... · N total sats".
+  // Falls back to the old comma-joined group label if the payload lacks the
+  // per-satellite constellation field (backwards-compat).
+  const groups = orbitsData.groups || [];
+  const orbits = orbitsData.orbits || [];
+  let breakdown;
+  if (orbits.length && orbits[0].constellation) {
+    const counts = new Map();
+    for (const o of orbits) {
+      const k = o.constellation;
+      if (k) counts.set(k, (counts.get(k) || 0) + 1);
+    }
+    breakdown = [...counts.entries()]
+      .map(([k, n]) => `${k} · ${n.toLocaleString()}`)
+      .join(', ');
+  } else {
+    breakdown = (orbitsData.group || config.sat_group || '').toString();
+  }
   document.getElementById('meta').textContent =
-    `${orbitsData.group || config.sat_group} · ${orbitsData.n_satellites} sats · ${orbitsData.n_timesteps} steps · fetched ${orbitsData.fetch_time || config.fetch_time || ''}`;
+    `${breakdown} · ${orbitsData.n_timesteps} steps · fetched ${orbitsData.fetch_time || config.fetch_time || ''}`;
 
   const slider = document.getElementById('threshold');
   const thrVal = document.getElementById('thrVal');

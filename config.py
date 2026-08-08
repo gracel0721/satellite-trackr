@@ -26,9 +26,13 @@ FRONTEND_DIR = BASE_DIR / "public"
 # classic 3-line TLE records (name / line1 / line2).
 CELESTRAK_URL = "https://celestrak.org/NORAD/elements/gp.php?GROUP={group}&FORMAT=tle"
 SAT_GROUP = os.environ.get("SAT_GROUP", "starlink")
+# Default multi-regime set: active commercial LEO + GNSS + historical debris
+# populations from the three well-documented fragmentation events. Override
+# with SAT_GROUPS (comma-separated) or SAT_GROUP (single group) env vars.
+_DEFAULT_GROUPS = "starlink,oneweb,iridium-NEXT,gnss,fengyun-1c-debris,iridium-33-debris,cosmos-2251-debris"
 SAT_GROUPS = [
     g.strip()
-    for g in os.environ.get("SAT_GROUPS", SAT_GROUP).split(",")
+    for g in os.environ.get("SAT_GROUPS", os.environ.get("SAT_GROUP", _DEFAULT_GROUPS)).split(",")
     if g.strip()
 ]
 

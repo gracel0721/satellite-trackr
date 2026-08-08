@@ -100,10 +100,17 @@ pip install -r requirements.txt
 python pipeline/run_pipeline.py
 ```
 
-This fetches the `starlink` group from CelesTrak (capped to 200 satellites),
+This fetches the default multi-regime group set from CelesTrak
+(`starlink,oneweb,iridium-NEXT,gnss,fengyun-1c-debris,iridium-33-debris,cosmos-2251-debris`),
 propagates each over a 24h window at 1-minute steps, detects close approaches,
-and writes `data/orbits/orbits.json` and `data/events/events.json`. A summary of 'collision risk' events 
-is printed to the console.
+and writes `data/orbits/orbits.json` and `data/events/events.json`. Each satellite
+carries a `constellation` tag and each event carries `constellation_a` / `constellation_b`,
+so the frontend can color-code by group and surface cross-constellation conjunctions.
+A summary of 'collision risk' events is printed to the console.
+
+Override the group set with `SAT_GROUPS` (comma-separated, e.g.
+`SAT_GROUPS=starlink python pipeline/run_pipeline.py`) or `SAT_GROUP` for a
+single group. Cap the total count with `N_MAX=2000` to keep dev runs fast.
 
 ### Run the app
 
@@ -126,7 +133,7 @@ variables:
 | Variable | Default | Meaning |
 |---|---|---|
 | `SAT_GROUP` | `starlink` | fallback single CelesTrak group |
-| `SAT_GROUPS` | `SAT_GROUP` | comma-separated list of groups, e.g. `starlink,oneweb,iridium` |
+| `SAT_GROUPS` | multi-regime set | comma-separated list of groups. Default: `starlink,oneweb,iridium-NEXT,gnss,fengyun-1c-debris,iridium-33-debris,cosmos-2251-debris`. Override with e.g. `SAT_GROUPS=starlink,oneweb` |
 | `N_MAX` | _(unset)_ | optional cap on total satellites; empty means no cap |
 | `TIME_WINDOW_HRS` | `24` | propagation span |
 | `STEP_MIN` | `1` | minutes between samples for analysis |
