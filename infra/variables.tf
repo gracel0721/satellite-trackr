@@ -34,8 +34,8 @@ variable "sat_groups" {
 
 variable "n_max" {
   type        = number
-  default     = 8000
-  description = "Optional cap on total satellites processed. Caps Starlink when debris spikes so smaller groups aren't squeezed out. Empty string disables."
+  default     = 20000
+  description = "Optional cap on total satellites processed. The multi-regime default set totals ~11-12k sats (Starlink alone exceeds 8000), so the cap must sit above that or the merged-list prefix (Starlink first) crowds out every other group. 20000 keeps all 7 groups through the cap as a memory guard. Empty string disables."
 }
 
 variable "memory_mb" {
