@@ -19,16 +19,60 @@ const CONSTELLATION_COLORS = {
   'cosmos-2251-debris':  '#9085e9',
 };
 // Fallback for any constellation name not in the map (e.g. legacy payloads
-// without the `constellation` field, or new groups the user added).
-const FALLBACK_COLOR = Cesium.Color.SKYBLUE;
+// without the `constellation` field, or new groups the user added). Resolved
+// lazily inside colorFor() (not at module top level) because app.js loads
+// before the deferred Cesium CDN script, so `Cesium` is undefined here at
+// parse time — it is only available once init() runs on DOMContentLoaded.
 const COLOR_PALETTE_ORDER = ['#3987e5','#d95926','#199e70','#c98500','#d55181','#008300','#9085e9','#e66767','#4cb3c3','#a37bff'];
 function colorFor(name) {
-  if (!name) return FALLBACK_COLOR;
+  if (!name) return Cesium.Color.SKYBLUE;
   if (CONSTELLATION_COLORS[name]) return Cesium.Color.fromCssColorString(CONSTELLATION_COLORS[name]);
   // Deterministic fallback for user-added groups: hash to a slot in the palette.
   let h = 0;
   for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) | 0;
   return Cesium.Color.fromCssColorString(COLOR_PALETTE_ORDER[Math.abs(h) % COLOR_PALETTE_ORDER.length]);
+}
+
+// Basemap options for the globe's imagery layer. Each entry is a lazy factory
+// (Cesium is not defined at module top level, so providers are constructed on
+// demand inside setBasemap after the CDN script has loaded). Swapping a
+// basemap only re-loads map tiles — the globe, satellite entities, clock, and
+// alerts are untouched. All three are free tile services; no Ion token needed.
+//   dark      — CartoDB Dark Matter (near-black; colored dots pop).
+//   satellite — Esri World Imagery, dimmed to 55% so dots stay visible.
+//   street    — OpenStreetMap (the original basemap).
+const BASEMAPS = {
+  dark: {
+    provider: () => new Cesium.UrlTemplateImageryProvider({
+      url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
+      subdomains: ['a', 'b', 'c', 'd'],
+      credit: 'CARTO, OpenStreetMap contributors',
+    }),
+    brightness: 1.0,
+  },
+  satellite: {
+    provider: () => new Cesium.UrlTemplateImageryProvider({
+      url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      credit: 'Esri, Maxar, Earthstar Geographics',
+    }),
+    brightness: 0.55, // dimmed so colored constellation dots stay visible
+  },
+  street: {
+    provider: () => new Cesium.OpenStreetMapImageryProvider({ url: 'https://tile.openstreetmap.org/' }),
+    brightness: 1.0,
+  },
+};
+let baseImageryLayer = null;
+// Swap the active basemap. Removing the old imagery layer and adding the new
+// one re-loads only map tiles; satellite entities stay put on top.
+function setBasemap(key) {
+  const b = BASEMAPS[key];
+  if (!b || !viewer) return;
+  if (baseImageryLayer) viewer.imageryLayers.remove(baseImageryLayer);
+  baseImageryLayer = viewer.imageryLayers.addImageryProvider(b.provider());
+  baseImageryLayer.brightness = b.brightness;
+  const sel = document.getElementById('basemap');
+  if (sel) sel.value = key;
 }
 
 let viewer, satEntities = {}, eventsData = [], orbitsData = null, config = {};
@@ -37,6 +81,14 @@ let stepSeconds = 60; // derived from output time grid after data loads
 // parse); this is the typed-array view over it. Null in local dev, where the
 // samples live inside each orbit's `ecef_m` JSON array.
 let ecefCoords = null;
+// Per-constellation show/hide state. satConstellation maps sat_id -> name so
+// the toggle handler can find every entity belonging to a constellation;
+// visibleConstellations is the set currently toggled on (all on by default).
+let satConstellation = {};
+let visibleConstellations = new Set();
+// Total unique constellations in the loaded payload (for the "X of Y shown"
+// meta line). Set once in renderLegend.
+let totalConstellations = 0;
 
 function fromIso(s) { return Cesium.JulianDate.fromIso8601(s); }
 
@@ -130,12 +182,15 @@ function buildSatellites() {
       name: o.name,
       position: pos,
       point: {
-        pixelSize: 6,
+        pixelSize: 4,
         color: colorFor(o.constellation),
         outlineColor: Cesium.Color.WHITE,
         outlineWidth: 1,
       },
     });
+    // Record the constellation so the toggle handler can flip this entity's
+    // visibility without rebuilding the whole entity set.
+    satConstellation[o.sat_id] = o.constellation || 'unknown';
   });
 
   viewer.clock.startTime = start.clone();
@@ -147,8 +202,9 @@ function buildSatellites() {
   viewer.clock.shouldAnimate = true;
 }
 
-// Render the per-constellation legend with per-group counts and the
-// constellation swatches. Called once after buildSatellites.
+// Render the per-constellation toggle list: one row per constellation with a
+// checkbox (color-tinted), color swatch, name, and count. All start checked
+// (visible). Called once after buildSatellites.
 function renderLegend() {
   const el = document.getElementById('legend');
   if (!el || !orbitsData) return;
@@ -159,24 +215,73 @@ function renderLegend() {
     const k = o.constellation || 'unknown';
     counts.set(k, (counts.get(k) || 0) + 1);
   }
+  totalConstellations = counts.size;
+  visibleConstellations = new Set(counts.keys()); // all on by default
   el.innerHTML = '';
   for (const [name, n] of counts) {
-    const item = document.createElement('div');
-    item.className = 'legend-item';
+    const c = colorFor(name);
+    const rgba = `rgba(${Math.round(c.red*255)},${Math.round(c.green*255)},${Math.round(c.blue*255)},${c.alpha})`;
+    const hex = `#${[c.red,c.green,c.blue].map(v => Math.round(v*255).toString(16).padStart(2,'0')).join('')}`;
+
+    // <label> wraps the checkbox so clicking anywhere on the row toggles it.
+    const row = document.createElement('label');
+    row.className = 'legend-item';
+
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = true;
+    cb.style.accentColor = hex; // tint the checkbox with the constellation color
+
     const sw = document.createElement('span');
     sw.className = 'swatch';
-    const c = colorFor(name);
-    sw.style.background = `rgba(${Math.round(c.red*255)},${Math.round(c.green*255)},${Math.round(c.blue*255)},${c.alpha})`;
-    item.appendChild(sw);
-    const label = document.createElement('span');
-    label.textContent = `${name} · `;
-    item.appendChild(label);
+    sw.style.background = rgba;
+
+    const nm = document.createElement('span');
+    nm.className = 'name';
+    nm.textContent = name;
+
     const cnt = document.createElement('span');
     cnt.className = 'count';
     cnt.textContent = n.toLocaleString();
-    item.appendChild(cnt);
-    el.appendChild(item);
+
+    row.appendChild(cb);
+    row.appendChild(sw);
+    row.appendChild(nm);
+    row.appendChild(cnt);
+    // Toggles affect only the globe markers; the alerts panel is independent
+    // of visibility by design (see updateMeta / renderAlerts).
+    cb.addEventListener('change', () => toggleConstellation(name, cb.checked));
+    el.appendChild(row);
   }
+}
+
+// Toggle a constellation's satellite markers on/off and refresh the meta line.
+function toggleConstellation(name, visible) {
+  if (visible) visibleConstellations.add(name);
+  else visibleConstellations.delete(name);
+  for (const id in satEntities) {
+    if (satConstellation[id] === name) satEntities[id].show = visible;
+  }
+  updateMeta();
+}
+
+// Meta line under the title: "<total> sats (<visible> of <total> shown) ·
+// <steps> steps · fetched <time>". Falls back to the old comma-joined group
+// label for payloads without the per-satellite constellation field.
+function updateMeta() {
+  const orbits = orbitsData.orbits || [];
+  const meta = document.getElementById('meta');
+  if (!meta) return;
+  if (!orbits.length) { meta.textContent = 'No data — run the pipeline.'; return; }
+  const totalSats = orbitsData.n_satellites || orbits.length;
+  const fetchTime = orbitsData.fetch_time || config.fetch_time || '';
+  let lead;
+  if (orbits[0].constellation) {
+    lead = `${totalSats.toLocaleString()} sats (${visibleConstellations.size} of ${totalConstellations} shown)`;
+  } else {
+    lead = (orbitsData.group || config.sat_group || '').toString();
+  }
+  meta.textContent = `${lead} · ${orbitsData.n_timesteps} steps · fetched ${fetchTime}`;
 }
 
 // Rebuild the red close-approach overlays + alerts list under `threshold`.
@@ -271,19 +376,17 @@ async function init() {
   const dataP = loadData();
 
   if (config.cesium_ion_token) Cesium.Ion.defaultAccessToken = config.cesium_ion_token;
-  // Use a free imagery source so the globe renders without a Cesium Ion token.
-  const imageryProvider = new Cesium.OpenStreetMapImageryProvider({
-    url: 'https://tile.openstreetmap.org/',
-  });
+  // baseLayer: false opts out of the Cesium Ion default imagery; we add our own
+  // free basemap below (default 'dark'). Swappable at runtime via setBasemap.
   viewer = new Cesium.Viewer('cesiumContainer', {
     timeline: true, animation: false, baseLayerPicker: false, fullscreenButton: true,
     geocoder: false, homeButton: false, sceneModePicker: false, navigationHelpButton: false,
     infoBox: true, selectionIndicator: true,
-    baseLayer: false, // avoid Ion default; we add a free OSM layer below
+    baseLayer: false,
   });
-  viewer.imageryLayers.addImageryProvider(imageryProvider);
   // Keep satellites visible above the globe surface.
   viewer.scene.globe.depthTestAgainstTerrain = false;
+  setBasemap('dark');
 
   // Now block on the data and build satellites on top of the live globe.
   await dataP;
@@ -292,27 +395,7 @@ async function init() {
 
   buildSatellites();
   renderLegend();
-
-  // Per-constellation breakdown: "<a> · <n>, <b> · <n>, ... · N total sats".
-  // Falls back to the old comma-joined group label if the payload lacks the
-  // per-satellite constellation field (backwards-compat).
-  const groups = orbitsData.groups || [];
-  const orbits = orbitsData.orbits || [];
-  let breakdown;
-  if (orbits.length && orbits[0].constellation) {
-    const counts = new Map();
-    for (const o of orbits) {
-      const k = o.constellation;
-      if (k) counts.set(k, (counts.get(k) || 0) + 1);
-    }
-    breakdown = [...counts.entries()]
-      .map(([k, n]) => `${k} · ${n.toLocaleString()}`)
-      .join(', ');
-  } else {
-    breakdown = (orbitsData.group || config.sat_group || '').toString();
-  }
-  document.getElementById('meta').textContent =
-    `${breakdown} · ${orbitsData.n_timesteps} steps · fetched ${orbitsData.fetch_time || config.fetch_time || ''}`;
+  updateMeta();
 
   const slider = document.getElementById('threshold');
   const thrVal = document.getElementById('thrVal');
@@ -324,6 +407,13 @@ async function init() {
   slider.addEventListener('input', () => {
     const v = Number(slider.value); thrVal.textContent = v.toFixed(2); renderAlerts(v);
   });
+
+  // Basemap selector — swapping only re-loads map tiles; satellites stay.
+  const basemapSel = document.getElementById('basemap');
+  if (basemapSel) {
+    basemapSel.value = 'dark';
+    basemapSel.addEventListener('change', () => setBasemap(basemapSel.value));
+  }
 }
 
 document.addEventListener('DOMContentLoaded', init);

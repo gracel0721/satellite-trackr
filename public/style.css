@@ -15,6 +15,13 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: system-ui, Segoe 
 .control { margin: 8px 0 4px; }
 .control label { display: block; margin-bottom: 4px; }
 .control input[type=range] { width: 100%; }
+.control select {
+  width: 100%; padding: 4px 6px;
+  background: rgba(15, 23, 42, 0.9); color: #e5e7eb;
+  border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 6px;
+  font-size: 12px; cursor: pointer;
+}
+.control select option { background: #0f172a; color: #e5e7eb; }
 
 .alerts { display: flex; flex-direction: column; gap: 6px; }
 .alert {
@@ -27,12 +34,18 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: system-ui, Segoe 
 .alert .t { color: #9ca3af; font-size: 11px; }
 .alert .c { color: #9ca3af; font-size: 10px; letter-spacing: 0.4px; margin-bottom: 2px; }
 
-.legend { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 10px; }
-.legend-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #e5e7eb; }
+.legend { display: flex; flex-direction: column; gap: 4px; margin: 4px 0 10px; }
+.legend-item {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11px; color: #e5e7eb;
+  cursor: pointer; user-select: none;
+}
+.legend-item input { margin: 0; width: 13px; height: 13px; cursor: pointer; }
 .legend-item .swatch {
   width: 10px; height: 10px; border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.7); display: inline-block;
+  border: 1px solid rgba(255, 255, 255, 0.7); display: inline-block; flex: 0 0 auto;
 }
-.legend-item .count { color: #9ca3af; margin-left: 2px; }
+.legend-item .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.legend-item .count { color: #9ca3af; }
 
 .cesium-viewer-bottom { display: none; }

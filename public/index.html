@@ -16,6 +16,15 @@
     <div id="meta" class="meta">Loading…</div>
 
     <div class="control">
+      <label for="basemap">Basemap</label>
+      <select id="basemap">
+        <option value="dark">Dark</option>
+        <option value="satellite">Satellite (dimmed)</option>
+        <option value="street">Street</option>
+      </select>
+    </div>
+
+    <div class="control">
       <label for="threshold">Close-approach threshold: <span id="thrVal">—</span> km</label>
       <input id="threshold" type="range" min="0.01" max="5" step="0.01" value="1" />
     </div>
