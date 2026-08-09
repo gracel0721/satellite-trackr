@@ -234,6 +234,12 @@ def fetch_tles(
         raw = _fetch_one_group(group)
         group_records = parse_tles(raw)
         log.info("Parsed %d TLE records from group=%s", len(group_records), group)
+        # Tag every record with its source constellation before extending so the
+        # tag survives the cross-group NORAD dedupe below (first occurrence wins).
+        # With the default group order, Starlink is first, so any NORAD collision
+        # across groups is attributed to Starlink — change the default to override.
+        for rec in group_records:
+            rec["constellation"] = group
         all_records.extend(group_records)
         # Polite pause between live fetches (skip after the last group).
         if idx < len(groups) - 1:

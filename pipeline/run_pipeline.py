@@ -67,7 +67,12 @@ def _prepare_output(
     """
     if factor <= 1:
         orbits_out = [
-            {"sat_id": o["sat_id"], "name": o["name"], "ecef_m": o["ecef_m"]}
+            {
+                "sat_id": o["sat_id"],
+                "name": o["name"],
+                "constellation": o.get("constellation", "unknown"),
+                "ecef_m": o["ecef_m"],
+            }
             for o in orbits
         ]
         return orbits_out, events, t_list
@@ -77,6 +82,7 @@ def _prepare_output(
         {
             "sat_id": o["sat_id"],
             "name": o["name"],
+            "constellation": o.get("constellation", "unknown"),
             "ecef_m": _decimate_ecef(o["ecef_m"], factor),
         }
         for o in orbits
